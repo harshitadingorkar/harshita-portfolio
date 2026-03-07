@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design tokens ─────────────────────────────── */
+:root {
+  --bg: #f2f0eb;
+  --bg-subtle: #ebe8e1;
+  --panel-bg: #ffffff;
+  --ink: #1c1b19;
+  --ink-muted: #6b6760;
+  --ink-faint: #b0ada7;
+  --accent: #c84b2f;
+  --border: #d8d4cd;
+}
+
+.dark {
+  --bg: #1a1918;
+  --bg-subtle: #222120;
+  --panel-bg: #242220;
+  --ink: #ede9e3;
+  --ink-muted: #9b9690;
+  --ink-faint: #605d58;
+  --accent: #e05c38;
+  --border: #2e2c29;
+}
+
+/* ── Global transitions ─────────────────────────── */
+*,
+*::before,
+*::after {
+  transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Don't transition transforms/opacity globally — let Framer handle those */
+.no-color-transition,
+.no-color-transition *,
+canvas {
+  transition: none !important;
+}
+
+/* ── Base ───────────────────────────────────────── */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ibm-plex-mono), monospace;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Custom scrollbar ───────────────────────────── */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+}
+
+/* ── Selection ──────────────────────────────────── */
+::selection {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/* ── Stripe pattern utility ─────────────────────── */
+.stripe-pattern {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 4px,
+    var(--border) 4px,
+    var(--border) 5px
+  );
+}
+
+/* ── Mobile responsiveness ──────────────────────── */
+@media (max-width: 768px) {
+  /* Work section project cards */
+  .project-card-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* About two-column */
+  .about-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Odds grid: 2 columns on mobile */
+  .odds-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Section padding */
+  .section-pad {
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+  }
+
+  /* Canvas overlay text */
+  .canvas-name-overlay {
+    left: 20px !important;
+    bottom: 60px !important;
+  }
+
+  /* Sidebar links: hide all but last on tiny screens */
+  .nav-links-mobile {
+    gap: 16px !important;
+  }
+}
