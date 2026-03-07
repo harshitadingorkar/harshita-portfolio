@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# env files
+.env
+.env.local
+.env.*.local
+
+# Claude
+.claude/
+
+# OS
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
