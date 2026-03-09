@@ -46,7 +46,7 @@ function IndexStrip({ router }: { router: ReturnType<typeof useRouter> }) {
 // ── Tokens ─────────────────────────────────────────────────────────────────
 const MONO   = 'var(--font-ibm-plex-mono), monospace'
 const BODY   = 'var(--font-manrope), sans-serif'
-const AVERIA = "'Averia Libre Serif', Georgia, serif"
+const AVERIA = "'Averia Serif Libre', Georgia, serif"
 const BG     = '#f2f0eb'
 const INK    = '#1c1b19'
 const MUTED  = '#6b6860'

@@ -42,7 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       <head>
         <link
-          href="https://fonts.googleapis.com/css2?family=Averia+Libre+Serif:ital,wght@0,400;1,400&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Averia+Serif+Libre:ital,wght@0,400;1,400&display=swap"
           rel="stylesheet"
         />
         {/* Runs before any JS — prevents black flash on load */}
