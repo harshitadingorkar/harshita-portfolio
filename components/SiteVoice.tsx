@@ -31,7 +31,7 @@ const GAP_MS = 60_000
 function shownSet(): Set<string> { return new Set(ss.json<string[]>('sv_shown', [])) }
 function markShown(id: string) {
   const s = shownSet(); s.add(id)
-  ss.set('sv_shown', JSON.stringify([...s]))
+  ss.set('sv_shown', JSON.stringify(Array.from(s)))
   ss.set('sv_last', String(Date.now()))
 }
 function canShow(id: string): boolean {
@@ -119,10 +119,10 @@ export default function SiteVoice() {
   const isVisibleRef = useRef(false)
   const displaceRef  = useRef<SVGFEDisplacementMapElement>(null)
   const wrapperRef   = useRef<HTMLDivElement>(null)
-  const typeRef      = useRef<ReturnType<typeof setInterval>>()
-  const holdRef      = useRef<ReturnType<typeof setTimeout>>()
-  const pendingRef   = useRef<ReturnType<typeof setTimeout>>()
-  const rafRef       = useRef<number>()
+  const typeRef      = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+  const holdRef      = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const pendingRef   = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const rafRef       = useRef<number | undefined>(undefined)
 
   // ── Dissolve (Marauder's Map via rAF on SVG filter) ─────────────────────────
   const startDissolve = useCallback(() => {
