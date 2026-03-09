@@ -4,16 +4,17 @@
 
 /* ── Design tokens ─────────────────────────────── */
 :root {
-  --bg: #f2f0eb;
-  --bg-subtle: #ebe8e1;
+  --bg: #c3bcaa;
+  --bg-subtle: #b8b09e;
   --panel-bg: #ffffff;
-  --ink: #1c1b19;
-  --ink-muted: #6b6760;
-  --ink-faint: #b0ada7;
+  --ink: #0d0d0d;
+  --ink-muted: #3d3830;
+  --ink-faint: #7a7265;
   --accent: #c84b2f;
-  --border: #d8d4cd;
+  --border: #a9a192;
 }
 
+/* dark mode — disabled for now
 .dark {
   --bg: #1a1918;
   --bg-subtle: #222120;
@@ -23,7 +24,7 @@
   --ink-faint: #605d58;
   --accent: #e05c38;
   --border: #2e2c29;
-}
+} */
 
 /* ── Global transitions ─────────────────────────── */
 *,
@@ -32,7 +33,6 @@
   transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
-/* Don't transition transforms/opacity globally — let Framer handle those */
 .no-color-transition,
 .no-color-transition *,
 canvas {
@@ -42,6 +42,7 @@ canvas {
 /* ── Base ───────────────────────────────────────── */
 html {
   scroll-behavior: smooth;
+  background-color: #c3bcaa; /* matches --bg, prevents black flash before CSS vars load */
 }
 
 body {
@@ -81,36 +82,37 @@ body {
   );
 }
 
+/* ── Hide Unicorn Studio watermark ──────────────── */
+a[href*="unicorn.studio"] {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+
 /* ── Mobile responsiveness ──────────────────────── */
 @media (max-width: 768px) {
-  /* Work section project cards */
   .project-card-grid {
     grid-template-columns: 1fr !important;
   }
 
-  /* About two-column */
   .about-grid {
     grid-template-columns: 1fr !important;
   }
 
-  /* Odds grid: 2 columns on mobile */
   .odds-grid {
     grid-template-columns: repeat(2, 1fr) !important;
   }
 
-  /* Section padding */
   .section-pad {
     padding-left: 20px !important;
     padding-right: 20px !important;
   }
 
-  /* Canvas overlay text */
   .canvas-name-overlay {
     left: 20px !important;
     bottom: 60px !important;
   }
 
-  /* Sidebar links: hide all but last on tiny screens */
   .nav-links-mobile {
     gap: 16px !important;
   }

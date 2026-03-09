@@ -1,403 +1,607 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useRouter } from 'next/navigation'
-import { PatronData, SHAPES, timeAgo, mulberry32, hashString } from '@/lib/patronus'
+import { type HoverState } from '@/components/HoverImages'
+function BackArrowIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <path d="M9 3L5 7L9 11" stroke="var(--ink-muted)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+function PlusIcon({ open }: { open: boolean }) {
+  return (
+    <motion.svg
+      animate={{ rotate: open ? 45 : 0 }}
+      transition={{ duration: 0.22 }}
+      width="10" height="10" viewBox="0 0 10 10" fill="none"
+      style={{ display: 'block', flexShrink: 0 }}
+    >
+      <line x1="5" y1="1" x2="5" y2="9" stroke="var(--ink-faint)" strokeWidth="1.3" strokeLinecap="round" />
+      <line x1="1" y1="5" x2="9" y2="5" stroke="var(--ink-faint)" strokeWidth="1.3" strokeLinecap="round" />
+    </motion.svg>
+  )
+}
 
-// ── Transitions ──────────────────────────────────────────────────────────────
-const SPRING = { duration: 0.38, ease: 'easeOut' } as const
-const FADE   = { duration: 0.18, ease: 'easeInOut' } as const
+// ── Types ──────────────────────────────────────────────────────────────────
+interface Metric { value: string; label: string }
+interface ProjectData {
+  title: string; type: string; role: string; description: string
+  details: { problem: string; contribution: string; decisions: string; metrics: Metric[] }
+  furtherReading: string[]
+  shortDesc: string; route: string; cta: string
+}
 
-// ── Project content ───────────────────────────────────────────────────────────
-const PROJECT_INFO: Record<string, {
-  title: string; descriptor: string; impact: string; rationale: string; route: string; cta: string
-}> = {
+// ── Project data ───────────────────────────────────────────────────────────
+const PROJECT_INFO: Record<string, ProjectData> = {
   influence: {
     title: 'Influence Graph',
-    descriptor: 'AI-powered relationship intelligence for enterprise sales',
-    impact: '0→1 feature · 2024',
-    rationale: 'Mapping hidden buying group relationships. An AI graph that makes invisible networks legible to revenue teams.',
-    route: '/work/influence-graph', cta: 'VIEW CASE STUDY →',
+    type: 'PRODUCT DESIGN · SALESLOFT · 2024',
+    role: 'Lead Product Designer',
+    description: 'AI-powered relationship intelligence for enterprise sales. Surfaces hidden connection paths between sellers and buyers across an entire organisation.',
+    details: {
+      problem: 'Enterprise sellers couldn\'t see or navigate buying group relationships. Critical stakeholder paths were invisible, leading to missed deals and stalled pipeline.',
+      contribution: 'End-to-end design from research through launch. Defined information architecture, designed the relationship graph system, and led alignment across product, engineering, and GTM.',
+      decisions: 'Chose graph visualisation over list-based UI to make network topology legible. Prioritised progressive disclosure to avoid overwhelming users with full complexity.',
+      metrics: [
+        { value: '—', label: 'Metric placeholder' },
+        { value: '—', label: 'Metric placeholder' },
+      ],
+    },
+    furtherReading: [
+      'The hardest part wasn\'t building the graph — it was deciding what to leave out. Enterprise data is dense. Showing everything would have been useless.',
+      'Six rounds of usability tests before converging on the layout. The key insight: sellers don\'t think in networks, they think in paths.',
+    ],
+    shortDesc: 'AI-powered relationship intelligence for enterprise sales',
+    route: '/work/influence-graph', cta: 'View case study →',
   },
   ai_email: {
     title: 'AI Email Assistant',
-    descriptor: 'Generative AI email with built-in explainability',
-    impact: 'Shipped · Q3 2024',
-    rationale: 'Redesigning AI-assisted outreach with explainability built in. Reps build intuition, not just click accept.',
-    route: '/work/ai-email-assistant', cta: 'VIEW CASE STUDY →',
+    type: 'PRODUCT DESIGN · SALESLOFT · 2023',
+    role: 'Lead Product Designer',
+    description: 'Generative email with built-in explainability. Reps build intuition instead of just clicking accept.',
+    details: {
+      problem: 'Generative AI email existed but reps couldn\'t tell why suggestions were made — leading to blind acceptance, low trust, and degraded personalisation over time.',
+      contribution: 'Designed the explainability layer: surfacing signals behind each generated suggestion in real-time, so reps could learn and edit with confidence.',
+      decisions: 'Rejected the "magic black box" pattern in favour of transparent reasoning. Built micro-annotations that explain each sentence without cluttering the compose view.',
+      metrics: [
+        { value: '—', label: 'Metric placeholder' },
+        { value: '—', label: 'Metric placeholder' },
+      ],
+    },
+    furtherReading: [
+      'Explainability is not the same as complexity. The challenge was making reasoning legible in under 3 seconds — which forced radical simplification of how we described AI decisions.',
+      'We prototyped 12 different annotation patterns. The one that shipped was the fourth we tried — the others added cognitive load rather than reducing it.',
+    ],
+    shortDesc: 'Generative email with built-in explainability',
+    route: '/work/ai-email-assistant', cta: 'View case study →',
   },
   github: {
     title: 'GitHub Pull Requests',
-    descriptor: 'UX research and systems design for code review',
-    impact: '50M+ Active Users',
-    rationale: 'Rethinking the pull request review experience for 50M+ developers globally.',
-    route: '/work/github', cta: 'VIEW CASE STUDY →',
+    type: 'UX RESEARCH · GITHUB · 2024',
+    role: 'Graduate Product Designer',
+    description: 'Code review UX research across 50M+ developers. Uncovered an accessibility paradox that would have shipped to production.',
+    details: {
+      problem: 'A proposed PR interface change would have improved efficiency for most developers while silently breaking the workflow for developers with visual impairments — a trade-off invisible to the team.',
+      contribution: 'Designed and ran mixed-methods research across GitHub\'s developer base. Synthesised findings into actionable design recommendations that prevented the problematic change from shipping.',
+      decisions: 'Chose to frame the finding as a systemic design pattern problem, not a one-off edge case — which led to broader accessibility audit protocols being adopted.',
+      metrics: [
+        { value: '50M+', label: 'Developers impacted' },
+        { value: '25%', label: 'Faster review cycles' },
+      ],
+    },
+    furtherReading: [
+      'The accessibility paradox: the change that helped 99% of users would have been invisible and confusing to 1% — and that 1% had no alternative path.',
+      'This project changed how I think about research scope. A small usability study became a systems-level finding once we followed the data far enough.',
+    ],
+    shortDesc: 'Code review UX research across 50M+ developers',
+    route: '/work/github', cta: 'View case study →',
   },
   sony: {
     title: 'Sony Audio',
-    descriptor: 'Consumer research and hardware-software interaction',
-    impact: 'Consumer Research · 2022',
-    rationale: 'Research-led exploration of device onboarding — finding friction and delight in unexpected places.',
-    route: '/work/sony', cta: 'VIEW DECK →',
+    type: 'PRODUCT DESIGN · SONY · 2023',
+    role: 'UX Designer',
+    description: 'Hardware-software interaction design for audio onboarding. Bridging physical product and digital experience.',
+    details: {
+      problem: 'Sony\'s premium headphone onboarding failed to connect the physical unboxing moment to the digital setup experience — users arrived in the app already frustrated.',
+      contribution: 'Consumer research and interaction design for the setup flow. Mapped the full journey from box opening to first successful playback and redesigned the critical drop-off points.',
+      decisions: 'Reframed onboarding as a product story rather than a setup checklist — leading with delight before asking for permissions.',
+      metrics: [
+        { value: '—', label: 'Metric placeholder' },
+        { value: '—', label: 'Metric placeholder' },
+      ],
+    },
+    furtherReading: [
+      'Physical products have a moment of anticipation that digital products rarely match. The unboxing is an emotional peak — and the onboarding was squandering it with bluetooth pairing instructions.',
+      'The most useful research came from sitting with people as they opened the box for the first time. Nothing in a survey would have captured that specific moment of confusion.',
+    ],
+    shortDesc: 'Hardware-software interaction for audio onboarding',
+    route: '/work/sony', cta: 'View deck →',
   },
 }
 
-// ── Dashed rule ───────────────────────────────────────────────────────────────
+// ── Experience ─────────────────────────────────────────────────────────────
+const EXPERIENCE = [
+  { role: 'Product Designer',                         company: 'Salesloft',                   period: '2025–present' },
+  { role: 'Graduate Product Designer',                company: 'GitHub',                      period: '2024'         },
+  { role: 'M.S. Human Centered Design & Engineering', company: 'University of Washington',    period: '2023–2025'    },
+  { role: 'Software Designer → UX Designer',          company: 'Hewlett Packard Enterprise',  period: '2021–2023'    },
+  { role: 'UX Developer Intern',                      company: 'Nutanix',                     period: '2021'         },
+]
+
+const WORK_LOGOS = [
+  { label: 'SL', color: '#e05c38', bg: 'rgba(224,92,56,0.13)'   },
+  { label: 'GH', color: '#6e40c9', bg: 'rgba(110,64,201,0.13)'  },
+  { label: 'S',  color: '#0055b3', bg: 'rgba(0,85,179,0.13)'    },
+]
+
+// ── Primitives ─────────────────────────────────────────────────────────────
 const HR = () => (
-  <div style={{ borderBottom: '1px dashed var(--border)', margin: '0' }} />
+  <div style={{ padding: '0 14px' }}>
+    <div style={{ borderBottom: '1px dotted var(--border)' }} />
+  </div>
 )
 
-// ── Accordion row ─────────────────────────────────────────────────────────────
-function AccordionRow({
-  symbol, label, open, onToggle, children,
-}: {
-  symbol: string; label: string; open: boolean
-  onToggle: () => void; children: React.ReactNode
+function AccordionRow({ label, open, onToggle, children, onSectionHover, onSectionHoverEnd, onHeaderHover, onHeaderHoverEnd, headerSlot }: {
+  label: string; open: boolean; onToggle: () => void; children: React.ReactNode
+  onSectionHover?: () => void; onSectionHoverEnd?: () => void
+  onHeaderHover?: () => void;  onHeaderHoverEnd?: () => void
+  headerSlot?: React.ReactNode
 }) {
   return (
-    <div>
+    <div onMouseEnter={onSectionHover} onMouseLeave={onSectionHoverEnd}>
       <button
         onClick={onToggle}
-        style={{ width: '100%', display: 'flex', alignItems: 'center',
-          justifyContent: 'space-between', padding: '11px 20px',
-          background: 'none', border: 'none', cursor: 'pointer' }}
+        onMouseEnter={onHeaderHover}
+        onMouseLeave={onHeaderHoverEnd}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center',
+          justifyContent: 'space-between', padding: '10px 16px',
+          background: 'none', border: 'none', cursor: 'pointer',
+        }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '9px',
-            color: 'var(--ink-muted)', lineHeight: 1 }}>
-            {symbol}
-          </span>
-          <span style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '10px',
-            letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink)' }}>
-            {label}
-          </span>
+        <span style={{
+          fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '9.5px',
+          letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink)',
+        }}>
+          {label}
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          {headerSlot}
+          <PlusIcon open={open} />
         </div>
-        <motion.span
-          animate={{ rotate: open ? 45 : 0 }}
-          transition={{ duration: 0.2 }}
-          style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '14px',
-            color: 'var(--ink-faint)', lineHeight: 1, display: 'block' }}
-        >
-          +
-        </motion.span>
       </button>
       <HR />
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={SPRING}
-            style={{ overflow: 'hidden' }}
-          >
+      <div style={{
+        display: 'grid',
+        gridTemplateRows: open ? '1fr' : '0fr',
+        transition: 'grid-template-rows 360ms cubic-bezier(0.25,0,0.25,1)',
+        overflow: 'hidden',
+      }}>
+        <div style={{ minHeight: 0 }}>
+          <div style={{
+            opacity: open ? 1 : 0,
+            transition: `opacity ${open ? '220ms' : '120ms'} ease ${open ? '140ms' : '0ms'}`,
+          }}>
             {children}
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
 
-// ── Patron mini canvas ────────────────────────────────────────────────────────
-function PatronMiniCanvas({ patron }: { patron: PatronData }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const rafRef    = useRef<number>(0)
-  const frameRef  = useRef(0)
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    canvas.width = 56; canvas.height = 56
-
-    const shape = SHAPES[patron.animal]
-    const rng = mulberry32(hashString(patron.id) ^ 0xabc)
-    const particles = Array.from({ length: 28 }, (_, i) => {
-      const pt = shape[i % shape.length]
-      return { nx: pt.x, ny: pt.y, opacity: 0.45 + rng() * 0.35, size: 1 + rng() * 0.7, phase: rng() * Math.PI * 2 }
-    })
-
-    const loop = () => {
-      const now = performance.now()
-      const frame = frameRef.current++
-      const ink = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#1c1b19'
-      ctx.clearRect(0, 0, 56, 56)
-      for (let i = 0; i < particles.length; i++) {
-        const p = particles[i]
-        const x = (p.nx - 0.5) * 52 + 28 + Math.sin(now * 0.0008 + p.phase) * 1.0
-        const y = (p.ny - 0.5) * 52 + 28 + Math.cos(now * 0.0006 + p.phase) * 1.0
-        const j = ((frame >> 1) + i * 7) % 16
-        const jx = (j % 4 - 1.5) * 0.4, jy = (Math.floor(j / 4) - 1.5) * 0.4
-        const opa = Math.max(0, Math.min(1, p.opacity * 0.7 + Math.sin(now * 0.003 + p.phase) * 0.04))
-        ctx.fillStyle = ink; ctx.globalAlpha = opa
-        ctx.fillRect(x + jx, y + jy, p.size, p.size)
-        if (i % 5 === 0) { ctx.globalAlpha = opa * 0.4; ctx.fillRect(x + jx + 0.5, y + jy + 0.5, p.size + 0.3, p.size + 0.3) }
-        ctx.globalAlpha = 1
-      }
-      rafRef.current = requestAnimationFrame(loop)
-    }
-    rafRef.current = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(rafRef.current)
-  }, [patron])
-
-  return <canvas ref={canvasRef} style={{ width: 56, height: 56, display: 'block' }} />
-}
-
-// ── Props ─────────────────────────────────────────────────────────────────────
+// ── RightPanel ─────────────────────────────────────────────────────────────
 export interface RightPanelProps {
-  activeSection: string
-  canvasHovProj: string | null
-  hoveredPatron: PatronData | null
+  onHoverChange?: (s: HoverState) => void
+  onProjectExpand?: (id: string | null) => void
+  onNavigate?: (route: string, projectId: string) => void
 }
 
-// ── Panel ─────────────────────────────────────────────────────────────────────
-export default function RightPanel({ activeSection, canvasHovProj, hoveredPatron }: RightPanelProps) {
-  const router = useRouter()
-  const [bodyOpen, setBodyOpen] = useState(true)
+export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate }: RightPanelProps) {
+  const [expanded, setExpanded]           = useState<string | null>(null)
   const [openAccordion, setOpenAccordion] = useState<string | null>(null)
-  const [ctaHov, setCtaHov] = useState(false)
+  const [workHdrHov, setWorkHdrHov]       = useState(false)
+  const [blurbVisible, setBlurbVisible]   = useState(true)
+  const [detailsOpen, setDetailsOpen]     = useState(false)
+  const [furtherOpen, setFurtherOpen]     = useState(false)
+  const [ctaHov, setCtaHov]               = useState(false)
 
-  // Derive active project
-  const activeProjectId = activeSection.startsWith('project-')
-    ? activeSection.replace('project-', '')
-    : (activeSection === 'hero' ? canvasHovProj : null)
-
-  const panelState: 'patron' | 'project' | 'default' =
-    hoveredPatron ? 'patron' : activeProjectId ? 'project' : 'default'
-
-  const proj = activeProjectId ? PROJECT_INFO[activeProjectId] : null
-
-  // Auto-expand WORK accordion when scrolled to a project
+  // Collapse entire bio when any accordion is open to save vertical space
   useEffect(() => {
-    if (activeSection.startsWith('project-')) setOpenAccordion('work')
-    else if (activeSection === 'about') setOpenAccordion('about')
-    else if (activeSection === 'explorations') setOpenAccordion('explorations')
-  }, [activeSection])
+    if (openAccordion !== null) {
+      setBlurbVisible(false)
+    } else {
+      const t = setTimeout(() => setBlurbVisible(true), 200)
+      return () => clearTimeout(t)
+    }
+  }, [openAccordion])
 
-  // Re-open body when state changes to project/patron (in case it was closed)
-  useEffect(() => {
-    if (panelState !== 'default') setBodyOpen(true)
-  }, [panelState])
+  function handleExpand(id: string) {
+    setExpanded(id)
+    setDetailsOpen(false)
+    setFurtherOpen(false)
+    onProjectExpand?.(id)
+  }
+
+  function handleCollapse() {
+    setExpanded(null)
+    onProjectExpand?.(null)
+  }
+
+  const proj = expanded ? PROJECT_INFO[expanded] : null
+
+  function dispatchSection(section: string) {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sv:section', { detail: { section } }))
+    }
+  }
+
+  const workLogos = (
+    <AnimatePresence>
+      {workHdrHov && (
+        <motion.div
+          initial={{ opacity: 0, x: 6 }} animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 6 }} transition={{ duration: 0.16 }}
+          style={{ display: 'flex', alignItems: 'center', gap: '3px' }}
+        >
+          {WORK_LOGOS.map(logo => (
+            <span key={logo.label} style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: '18px', height: '18px', borderRadius: '4px', background: logo.bg,
+              fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '7px',
+              fontWeight: 700, letterSpacing: '0.02em', color: logo.color,
+            }}>
+              {logo.label}
+            </span>
+          ))}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+
+  const cardStyle = {
+    background: 'var(--panel-bg)',
+    border: '1px solid var(--border)',
+    borderRadius: '6px',
+    boxShadow: '0 2px 16px rgba(0,0,0,0.08)',
+  } as const
+
+  // Shared INDEX header row content
+  const indexHeader = (showBack: boolean) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <svg width="6" height="6" viewBox="0 0 6 6" fill="none">
+          <circle cx="3" cy="3" r="3" fill="var(--accent)" />
+        </svg>
+        <span style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '9.5px', letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink)' }}>
+          Index
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {showBack && (
+          <button
+            onClick={handleCollapse}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 0 }}
+            aria-label="Back to index"
+          >
+            <BackArrowIcon />
+          </button>
+        )}
+      </div>
+    </div>
+  )
 
   return (
     <div
-      className="hidden md:block"
-      style={{ position: 'fixed', right: '40px', top: '50%', transform: 'translateY(-50%)',
-        width: '260px', zIndex: 15 }}
+      className="hidden md:flex"
+      style={{
+        position: 'fixed',
+        right: 'calc(50% - 450px)',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        width: '296px',
+        maxHeight: 'calc(100vh - 48px)',
+        zIndex: 15,
+        flexDirection: 'column',
+        gap: '8px',
+      }}
     >
-      {/* ── Card shell ────────────────────────────────────────────────── */}
-      <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--border)',
-        borderRadius: '3px', overflow: 'hidden' }}>
+      <AnimatePresence mode="wait">
 
-        {/* ── Header (always visible — the "stick") ─────────────────── */}
-        <button
-          onClick={() => setBodyOpen(o => !o)}
-          style={{ width: '100%', display: 'flex', alignItems: 'center',
-            justifyContent: 'space-between', padding: '16px 20px',
-            background: 'none', border: 'none', cursor: 'pointer' }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-            <span style={{ color: 'var(--accent)', fontSize: '11px', lineHeight: 1 }}>●</span>
-            <span style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '10px',
-              letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink)' }}>
-              {panelState === 'project' && proj ? proj.title.split(' ')[0] : panelState === 'patron' ? 'Patron' : 'Index'}
-            </span>
-          </div>
-          <motion.span
-            animate={{ rotate: bodyOpen ? 0 : -90 }}
-            transition={{ duration: 0.25 }}
-            style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '13px',
-              color: 'var(--ink-faint)', lineHeight: 1, display: 'block' }}
+        {/* ── STATE 1: DEFAULT — single unified card ──────────── */}
+        {!expanded && (
+          <motion.div
+            key="default"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.4, ease: 'easeOut', delay: 0.2 }}
+            style={{ ...cardStyle, overflowY: 'auto', maxHeight: 'calc(100vh - 48px)' }}
           >
-            −
-          </motion.span>
-        </button>
-
-        <HR />
-
-        {/* ── Body (slides up to collapse) ──────────────────────────── */}
-        <AnimatePresence initial={false}>
-          {bodyOpen && (
+            {/* INDEX header */}
             <motion.div
-              key="body"
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={SPRING}
-              style={{ overflow: 'hidden' }}
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: 'easeOut', delay: 0.525 }}
             >
-              {/* Inner content cross-fades between states */}
-              <AnimatePresence mode="wait">
+              {indexHeader(false)}
+            </motion.div>
 
-                {/* ── DEFAULT ───────────────────────────────────────── */}
-                {panelState === 'default' && (
-                  <motion.div key="default"
-                    initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }} transition={FADE}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: 'easeOut', delay: 0.6 }}
+            >
+              <HR />
+            </motion.div>
+
+            {/* Bio — collapses entirely when any accordion opens */}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: 'easeOut', delay: 0.85 }}
+            >
+              <div style={{
+                display: 'grid',
+                gridTemplateRows: blurbVisible ? '1fr' : '0fr',
+                transition: `grid-template-rows 360ms cubic-bezier(0.25,0,0.25,1)`,
+                overflow: 'hidden',
+              }}>
+                <div style={{ minHeight: 0 }}>
+                  <div style={{
+                    opacity: blurbVisible ? 1 : 0,
+                    transition: `opacity ${blurbVisible ? '200ms' : '100ms'} ease ${blurbVisible ? '160ms' : '0ms'}`,
+                  }}>
+                    <div style={{ padding: '12px 16px 10px' }}>
+                      <p style={{ fontFamily: 'var(--font-manrope), sans-serif', fontSize: '12px', color: 'var(--ink-muted)', lineHeight: 1.8 }}>
+                        Harshita is a Product designer, researcher. Her work lies at the intersection of careful observation and AI systems.
+                      </p>
+                      <p style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '9px', color: 'var(--ink-faint)', lineHeight: 1.6, letterSpacing: '0.02em', marginTop: '8px' }}>
+                        Currently: Product Designer at Salesloft
+                      </p>
+                    </div>
+                    <HR />
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* WORK */}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: 'easeOut', delay: 1.175 }}
+            >
+              <AccordionRow
+                label="Work" open={openAccordion === 'work'}
+                onToggle={() => setOpenAccordion(o => { const next = o === 'work' ? null : 'work'; if (next) dispatchSection(next); return next })}
+                onSectionHover={() => onHoverChange?.({ type: 'work' })}
+                onSectionHoverEnd={() => onHoverChange?.(null)}
+                onHeaderHover={() => setWorkHdrHov(true)}
+                onHeaderHoverEnd={() => setWorkHdrHov(false)}
+                headerSlot={workLogos}
+              >
+                <div style={{ padding: '4px 0 10px' }}>
+                  {Object.entries(PROJECT_INFO).map(([id, p]) => (
+                    <button
+                      key={id}
+                      onClick={() => handleExpand(id)}
+                      onMouseEnter={() => onHoverChange?.({ type: 'project', id })}
+                      onMouseLeave={() => onHoverChange?.({ type: 'work' })}
+                      style={{ display: 'block', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '7px 16px 6px', textAlign: 'left' }}
+                    >
+                      <span style={{ display: 'block', fontFamily: 'var(--font-manrope), sans-serif', fontSize: '11.5px', color: 'var(--ink-muted)', transition: 'color 0.15s ease', marginBottom: '2px' }}>
+                        {p.title}
+                      </span>
+                      <span style={{ display: 'block', fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '9px', color: 'var(--ink-faint)', letterSpacing: '0.02em', lineHeight: 1.5 }}>
+                        {p.shortDesc}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </AccordionRow>
+            </motion.div>
+
+            {/* EXPERIENCE */}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: 'easeOut', delay: 1.5 }}
+            >
+              <AccordionRow
+                label="Experience" open={openAccordion === 'experience'}
+                onToggle={() => setOpenAccordion(o => o === 'experience' ? null : 'experience')}
+              >
+                <div style={{ padding: '4px 0 10px' }}>
+                  {EXPERIENCE.map((item, i) => (
+                    <div key={i} style={{ padding: '6px 16px 5px' }}>
+                      <span style={{ display: 'block', fontFamily: 'var(--font-manrope), sans-serif', fontSize: '11px', color: 'var(--ink-muted)', lineHeight: 1.5 }}>
+                        {item.role}
+                      </span>
+                      <span style={{ display: 'block', fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '9px', color: 'var(--ink-faint)', letterSpacing: '0.02em', lineHeight: 1.5 }}>
+                        {item.company} · {item.period}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </AccordionRow>
+            </motion.div>
+
+            {/* EXPLORATIONS */}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: 'easeOut', delay: 1.825 }}
+            >
+              <AccordionRow
+                label="Explorations" open={openAccordion === 'explorations'}
+                onToggle={() => setOpenAccordion(o => { const next = o === 'explorations' ? null : 'explorations'; if (next) dispatchSection(next); return next })}
+                onSectionHover={() => onHoverChange?.({ type: 'explorations' })}
+                onSectionHoverEnd={() => onHoverChange?.(null)}
+              >
+                <div style={{ padding: '10px 16px 14px' }}>
+                  <p style={{ fontFamily: 'var(--font-manrope), sans-serif', fontSize: '12px', color: 'var(--ink-muted)', lineHeight: 1.75 }}>
+                    Side projects, experiments, visual notes and things built for curiosity.
+                  </p>
+                </div>
+              </AccordionRow>
+            </motion.div>
+
+            {/* ABOUT */}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: 'easeOut', delay: 2.15 }}
+            >
+              <AccordionRow
+                label="About" open={openAccordion === 'about'}
+                onToggle={() => setOpenAccordion(o => { const next = o === 'about' ? null : 'about'; if (next) dispatchSection(next); return next })}
+                onSectionHover={() => onHoverChange?.({ type: 'about' })}
+                onSectionHoverEnd={() => onHoverChange?.(null)}
+              >
+                <div style={{ padding: '10px 16px 14px' }}>
+                  <p style={{ fontFamily: 'var(--font-manrope), sans-serif', fontSize: '12px', color: 'var(--ink-muted)', lineHeight: 1.8 }}>
+                    [ABOUT_TEXT]
+                  </p>
+                </div>
+              </AccordionRow>
+            </motion.div>
+
+            {/* CONTACT */}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: 'easeOut', delay: 2.475 }}
+            >
+              <AccordionRow
+                label="Contact" open={openAccordion === 'contact'}
+                onToggle={() => setOpenAccordion(o => o === 'contact' ? null : 'contact')}
+              >
+                <div style={{ padding: '10px 16px 14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <a href="mailto:hello@harshitashyale.com" style={{ fontFamily: 'var(--font-manrope), sans-serif', fontSize: '12px', color: 'var(--ink-muted)', textDecoration: 'none' }}>
+                    hello@harshitashyale.com
+                  </a>
+                  <a href="https://linkedin.com/in/harshitashyale" target="_blank" rel="noopener noreferrer" style={{ fontFamily: 'var(--font-manrope), sans-serif', fontSize: '12px', color: 'var(--ink-muted)', textDecoration: 'none' }}>
+                    linkedin.com/in/harshitashyale
+                  </a>
+                </div>
+              </AccordionRow>
+            </motion.div>
+
+            <div style={{ height: '4px' }} />
+          </motion.div>
+        )}
+
+          {/* ── STATE 3: EXPANDED — INDEX strip + content card ── */}
+          {expanded && proj && (
+            <motion.div
+              key={`proj-${expanded}`}
+              initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.22, ease: 'easeOut' }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
+            >
+              {/* INDEX strip — collapsed header */}
+              <div style={{ ...cardStyle }}>
+                {indexHeader(true)}
+              </div>
+
+              {/* Project content card */}
+              <div style={{ ...cardStyle, overflow: 'auto', maxHeight: 'calc(100vh - 120px)' }}>
+
+                {/* Section header: ■ WORK  × — matching Trousdale reference */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <svg width="7" height="7" viewBox="0 0 7 7" fill="none">
+                      <rect width="7" height="7" fill="var(--ink-faint)" />
+                    </svg>
+                    <span style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '9px', letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+                      Work
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleCollapse}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '12px', padding: 0, lineHeight: 1, display: 'flex', alignItems: 'center' }}
+                    aria-label="Close"
                   >
-                    <div style={{ padding: '16px 20px' }}>
-                      <p style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '11.5px',
-                        color: 'var(--ink-muted)', lineHeight: 1.75, textIndent: '1.2em' }}>
-                        Harshita Shyale is a product designer and researcher. Her work lives at the
-                        intersection of careful observation and AI systems —{' '}
-                        <a href="#about" style={{ color: 'var(--ink-faint)',
-                          textDecoration: 'underline', textUnderlineOffset: '2px' }}>
-                          more information
-                        </a>.
-                      </p>
-                    </div>
-                    <HR />
+                    ×
+                  </button>
+                </div>
+                <HR />
 
-                    <AccordionRow symbol="▲" label="Work"
-                      open={openAccordion === 'work'}
-                      onToggle={() => setOpenAccordion(o => o === 'work' ? null : 'work')}
-                    >
-                      <div style={{ paddingBottom: '4px' }}>
-                        {Object.entries(PROJECT_INFO).map(([id, p]) => (
-                          <button key={id} onClick={() => router.push(p.route)}
-                            style={{ display: 'flex', justifyContent: 'space-between',
-                              alignItems: 'baseline', width: '100%', background: 'none',
-                              border: 'none', cursor: 'pointer', padding: '8px 20px',
-                              fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '11px',
-                              color: activeProjectId === id ? 'var(--ink)' : 'var(--ink-muted)',
-                              textDecoration: 'none', transition: 'color 0.15s ease' }}>
-                            <span>{p.title}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </AccordionRow>
+                {/* Title block */}
+                <div style={{ padding: '14px 16px 14px' }}>
+                  <p style={{ fontFamily: 'var(--font-manrope), sans-serif', fontSize: '16px', fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2, marginBottom: '6px' }}>
+                    {proj.title}
+                  </p>
+                  <p style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '8.5px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: '2px' }}>
+                    {proj.type}
+                  </p>
+                  <p style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '8.5px', letterSpacing: '0.05em', color: 'var(--ink-faint)', marginBottom: '12px' }}>
+                    {proj.role}
+                  </p>
+                  <p style={{ fontFamily: 'var(--font-manrope), sans-serif', fontSize: '12px', color: 'var(--ink-muted)', lineHeight: 1.8 }}>
+                    {proj.description}
+                  </p>
+                </div>
 
-                    <AccordionRow symbol="■" label="Explorations"
-                      open={openAccordion === 'explorations'}
-                      onToggle={() => setOpenAccordion(o => o === 'explorations' ? null : 'explorations')}
-                    >
-                      <div style={{ padding: '10px 20px 12px', fontFamily: 'var(--font-ibm-plex-mono)',
-                        fontSize: '11px', color: 'var(--ink-muted)', lineHeight: 1.7 }}>
-                        Side projects, experiments, and ideas in motion.
-                      </div>
-                    </AccordionRow>
-
-                    <AccordionRow symbol="●" label="About"
-                      open={openAccordion === 'about'}
-                      onToggle={() => setOpenAccordion(o => o === 'about' ? null : 'about')}
-                    >
-                      <div style={{ padding: '10px 20px 12px', fontFamily: 'var(--font-ibm-plex-mono)',
-                        fontSize: '11px', color: 'var(--ink-muted)', lineHeight: 1.7 }}>
-                        <p style={{ marginBottom: '6px' }}>M.S. Computer Science · UW · 2022</p>
-                        <p>Product Designer · Salesloft · 2022–present</p>
-                      </div>
-                    </AccordionRow>
-
-                    <AccordionRow symbol="●" label="Contact"
-                      open={openAccordion === 'contact'}
-                      onToggle={() => setOpenAccordion(o => o === 'contact' ? null : 'contact')}
-                    >
-                      <div style={{ padding: '10px 20px 14px', display: 'flex', flexDirection: 'column', gap: '7px' }}>
-                        {[
-                          { text: 'hello@harshitashyale.com', href: 'mailto:hello@harshitashyale.com' },
-                          { text: 'linkedin.com/in/harshitashyale', href: '#' },
-                        ].map(l => (
-                          <a key={l.href} href={l.href}
-                            style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '11px',
-                              color: 'var(--ink-muted)', textDecoration: 'none' }}>
-                            {l.text}
-                          </a>
-                        ))}
-                      </div>
-                    </AccordionRow>
-                    {/* Bottom breathing room */}
-                    <div style={{ height: '6px' }} />
-                  </motion.div>
-                )}
-
-                {/* ── PROJECT ───────────────────────────────────────── */}
-                {panelState === 'project' && proj && (
-                  <motion.div key={`proj-${activeProjectId}`}
-                    initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }} transition={FADE}
-                  >
-                    <div style={{ padding: '18px 20px 0' }}>
-                      <p style={{ fontFamily: 'var(--font-playfair)', fontSize: '19px', fontStyle: 'italic',
-                        fontWeight: 400, color: 'var(--ink)', lineHeight: 1.15, marginBottom: '8px' }}>
-                        {proj.title}
-                      </p>
-                      <p style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '11px',
-                        color: 'var(--ink-muted)', lineHeight: 1.65, marginBottom: '16px' }}>
-                        {proj.descriptor}
-                      </p>
-                    </div>
-                    <HR />
-                    <div style={{ padding: '14px 20px 0' }}>
-                      <p style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '9px',
-                        textTransform: 'uppercase', letterSpacing: '0.1em',
-                        color: 'var(--ink-faint)', marginBottom: '5px' }}>
-                        Impact
-                      </p>
-                      <p style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '14px',
-                        color: 'var(--ink)', fontWeight: 500, marginBottom: '16px' }}>
-                        {proj.impact}
-                      </p>
-                    </div>
-                    <HR />
-                    <div style={{ padding: '14px 20px 0' }}>
-                      <p style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '10.5px',
-                        color: 'var(--ink-muted)', lineHeight: 1.75, marginBottom: '16px' }}>
-                        {proj.rationale}
-                      </p>
-                    </div>
-                    <HR />
-                    <div style={{ padding: '12px 20px 18px' }}>
-                      <button
-                        onClick={() => router.push(proj.route)}
-                        onMouseEnter={() => setCtaHov(true)}
-                        onMouseLeave={() => setCtaHov(false)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-                          fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '10px',
-                          letterSpacing: '0.12em', textTransform: 'uppercase',
-                          color: ctaHov ? 'var(--accent)' : 'var(--ink)',
-                          transition: 'color 0.15s ease' }}
-                      >
-                        {proj.cta}
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* ── PATRON ────────────────────────────────────────── */}
-                {panelState === 'patron' && hoveredPatron && (
-                  <motion.div key={`patron-${hoveredPatron.id}`}
-                    initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }} transition={FADE}
-                  >
-                    <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                      <PatronMiniCanvas patron={hoveredPatron} />
-                      <p style={{ fontFamily: 'var(--font-playfair)', fontSize: '16px', fontStyle: 'italic',
-                        fontWeight: 400, color: 'var(--ink)', marginTop: '12px', marginBottom: '4px' }}>
-                        {hoveredPatron.name}
-                      </p>
-                      <p style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '9px',
-                        color: 'var(--ink-faint)', letterSpacing: '0.04em', marginBottom: '8px' }}>
-                        visited {timeAgo(hoveredPatron.createdAt)}
-                      </p>
-                      {hoveredPatron.isCurrentVisitor && (
-                        <p style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '10px',
-                          fontStyle: 'italic', color: 'var(--ink-muted)' }}>
-                          this is you.
+                {/* DETAILS */}
+                <HR />
+                <AccordionRow label="Details" open={detailsOpen} onToggle={() => setDetailsOpen(o => !o)}>
+                  <div style={{ padding: '12px 16px 16px' }}>
+                    {[
+                      { heading: 'Problem',       body: proj.details.problem      },
+                      { heading: 'Contribution',  body: proj.details.contribution },
+                      { heading: 'Key decisions', body: proj.details.decisions    },
+                    ].map(({ heading, body }) => (
+                      <div key={heading} style={{ marginBottom: '12px' }}>
+                        <p style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '8px', textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--ink-faint)', marginBottom: '4px' }}>
+                          {heading}
                         </p>
-                      )}
+                        <p style={{ fontFamily: 'var(--font-manrope), sans-serif', fontSize: '11.5px', color: 'var(--ink-muted)', lineHeight: 1.75 }}>
+                          {body}
+                        </p>
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', gap: '20px', marginTop: '4px' }}>
+                      {proj.details.metrics.map((m, i) => (
+                        <div key={i}>
+                          <p style={{ fontFamily: 'var(--font-manrope), sans-serif', fontSize: '20px', fontWeight: 500, color: 'var(--ink)', lineHeight: 1 }}>{m.value}</p>
+                          <p style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '8.5px', color: 'var(--ink-faint)', marginTop: '3px', letterSpacing: '0.04em' }}>{m.label}</p>
+                        </div>
+                      ))}
                     </div>
-                  </motion.div>
-                )}
+                  </div>
+                </AccordionRow>
 
-              </AnimatePresence>
+                {/* FURTHER READING */}
+                <HR />
+                <AccordionRow label="Further Reading" open={furtherOpen} onToggle={() => setFurtherOpen(o => !o)}>
+                  <div style={{ padding: '12px 16px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {proj.furtherReading.map((note, i) => (
+                      <p key={i} style={{ fontFamily: 'var(--font-manrope), sans-serif', fontSize: '11.5px', color: 'var(--ink-muted)', lineHeight: 1.8 }}>
+                        {note}
+                      </p>
+                    ))}
+                  </div>
+                </AccordionRow>
+
+                {/* CTA */}
+                <HR />
+                <div style={{ padding: '12px 16px 16px' }}>
+                  <button
+                    onClick={() => onNavigate?.(proj.route, expanded)}
+                    onMouseEnter={() => setCtaHov(true)}
+                    onMouseLeave={() => setCtaHov(false)}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                      fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '10px', letterSpacing: '0.1em',
+                      color: ctaHov ? 'var(--accent)' : 'var(--ink-muted)',
+                      transition: 'color 0.15s ease',
+                    }}
+                  >
+                    {proj.cta}
+                  </button>
+                </div>
+
+              </div>
             </motion.div>
           )}
-        </AnimatePresence>
 
-      </div>
+        </AnimatePresence>
     </div>
   )
 }

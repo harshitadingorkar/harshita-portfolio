@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
-import { Playfair_Display, IBM_Plex_Mono } from 'next/font/google'
+import { Playfair_Display, IBM_Plex_Mono, Manrope } from 'next/font/google'
 import Providers from '@/components/Providers'
+import SiteVoice from '@/components/SiteVoice'
 import '@/styles/globals.css'
 
 const playfair = Playfair_Display({
@@ -19,6 +20,13 @@ const ibmPlexMono = IBM_Plex_Mono({
   display: 'swap',
 })
 
+const manrope = Manrope({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  variable: '--font-manrope',
+  display: 'swap',
+})
+
 export const metadata: Metadata = {
   title: 'Harshita Shyale — Product Designer',
   description:
@@ -30,10 +38,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${playfair.variable} ${ibmPlexMono.variable}`}
+      className={`${playfair.variable} ${ibmPlexMono.variable} ${manrope.variable}`}
     >
-      <body>
-        <Providers>{children}</Providers>
+      <head>
+        <link
+          href="https://fonts.googleapis.com/css2?family=Averia+Libre+Serif:ital,wght@0,400;1,400&display=swap"
+          rel="stylesheet"
+        />
+        {/* Runs before any JS — prevents black flash on load */}
+        <style>{`html,body{background-color:#c3bcaa}`}</style>
+      </head>
+      <body style={{ backgroundColor: '#c3bcaa' }}>
+        <Providers>
+          {children}
+          <SiteVoice />
+        </Providers>
       </body>
     </html>
   )
