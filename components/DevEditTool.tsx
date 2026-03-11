@@ -1,404 +1,379 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// ── Storage key ───────────────────────────────────────────────────────────────
+const KEY = 'dev_edit_v2'
 
-interface ImagePosition {
-  id: string
-  left: string
-  top: string
-}
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface Change { selector: string; dx: number; dy: number; text?: string }
+type Entry =
+  | { type: 'move'; selector: string; prevDx: number; prevDy: number }
+  | { type: 'text'; selector: string; prevText: string }
+type Rect = { x: number; y: number; w: number; h: number }
 
-interface StoredPositions {
-  [id: string]: { left: string; top: string }
-}
-
-interface StoredText {
-  [key: string]: string
-}
-
-interface DragState {
-  id: string
-  startMouseX: number
-  startMouseY: number
-  startLeft: number
-  startTop: number
-  el: HTMLElement
-}
-
-// ── Storage helpers ────────────────────────────────────────────────────────────
-
-const POSITIONS_KEY = 'dev_image_positions'
-const TEXT_KEY      = 'dev_text_content'
-
-function loadPositions(): StoredPositions {
-  try {
-    const raw = localStorage.getItem(POSITIONS_KEY)
-    return raw ? (JSON.parse(raw) as StoredPositions) : {}
-  } catch {
-    return {}
+// ── Selector: stable CSS path to identify an element across reloads ───────────
+function mkSel(el: HTMLElement): string {
+  if (el.dataset.hoverImageId) return `[data-hover-image-id="${el.dataset.hoverImageId}"]`
+  if (el.dataset.editable)     return `[data-editable="${el.dataset.editable}"]`
+  if (el.id && !/^(us-|radix-)/.test(el.id)) return `#${el.id}`
+  const parts: string[] = []
+  let cur: HTMLElement | null = el
+  while (cur && cur !== document.body) {
+    const parent: HTMLElement | null = cur.parentElement
+    if (!parent) break
+    const sib = Array.from(parent.children).filter((c): c is HTMLElement => c.tagName === cur!.tagName)
+    const tag = cur.tagName.toLowerCase()
+    parts.unshift(sib.length > 1 ? `${tag}:nth-of-type(${sib.indexOf(cur) + 1})` : tag)
+    cur = parent
   }
+  return parts.join('>') || el.tagName.toLowerCase()
 }
 
-function savePositions(pos: StoredPositions): void {
-  localStorage.setItem(POSITIONS_KEY, JSON.stringify(pos))
+// ── Transform helpers ─────────────────────────────────────────────────────────
+function getTx(el: HTMLElement): [number, number] {
+  const m = el.style.transform.match(/translate\(([^,]+)px,\s*([^)]+)px\)/)
+  return m ? [parseFloat(m[1]), parseFloat(m[2])] : [0, 0]
+}
+function setTx(el: HTMLElement, dx: number, dy: number) {
+  el.style.transform = dx === 0 && dy === 0 ? '' : `translate(${Math.round(dx)}px,${Math.round(dy)}px)`
+}
+function toRect(el: HTMLElement): Rect {
+  const r = el.getBoundingClientRect()
+  return { x: r.left, y: r.top, w: r.width, h: r.height }
 }
 
-function loadText(): StoredText {
-  try {
-    const raw = localStorage.getItem(TEXT_KEY)
-    return raw ? (JSON.parse(raw) as StoredText) : {}
-  } catch {
-    return {}
-  }
+// ── Guards ────────────────────────────────────────────────────────────────────
+function isUI(el: Element | null): boolean { return !!el?.closest('[data-dev-ui]') }
+function isFormEl(el: HTMLElement): boolean {
+  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)
+}
+// Find closest element suitable for text editing
+function findTextEl(el: HTMLElement): HTMLElement | null {
+  if (isFormEl(el)) return null
+  const t = el.closest<HTMLElement>('p,h1,h2,h3,h4,h5,h6,span,a,li')
+  if (t && !t.querySelector('img')) return t
+  if (!el.querySelector('img,video,canvas') && el.textContent?.trim()) return el
+  return null
 }
 
-function saveText(text: StoredText): void {
-  localStorage.setItem(TEXT_KEY, JSON.stringify(text))
+// ── Persistence ───────────────────────────────────────────────────────────────
+function loadSaved(): Change[] {
+  try { return JSON.parse(localStorage.getItem(KEY) ?? '[]') } catch { return [] }
+}
+function persist(m: Map<string, Change>) {
+  const list = Array.from(m.values()).filter(c => c.dx !== 0 || c.dy !== 0 || c.text !== undefined)
+  localStorage.setItem(KEY, JSON.stringify(list))
 }
 
-// ── Drag helpers ───────────────────────────────────────────────────────────────
-
-/**
- * Parse a CSS left/top value (px or calc) into a pixel number relative to viewport.
- * For calc expressions we resolve against the actual rendered position.
- */
-function resolvePixel(val: string, el: HTMLElement, axis: 'left' | 'top'): number {
-  const rect = el.getBoundingClientRect()
-  return axis === 'left' ? rect.left : rect.top
-}
-
-function toPxString(val: number): string {
-  return `${Math.round(val)}px`
-}
-
-// ── Main component ─────────────────────────────────────────────────────────────
-
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function DevEditTool() {
-  const [editMode, setEditMode] = useState(false)
-  const [positions, setPositions] = useState<StoredPositions>({})
-  const dragRef = useRef<DragState | null>(null)
-  const [, forceUpdate] = useState(0)
+  const [on,      setOn]      = useState(false)
+  const [hovBox,  setHovBox]  = useState<Rect | null>(null)
+  const [selBox,  setSelBox]  = useState<Rect | null>(null)
+  const [isText,  setIsText]  = useState(false)
+  const [saveOk,  setSaveOk]  = useState(false)
+  const [histLen, setHistLen] = useState(0)
 
-  // ── Keyboard shortcut ────────────────────────────────────────────────────────
+  const selEl    = useRef<HTMLElement | null>(null)
+  const history  = useRef<Entry[]>([])
+  const changes  = useRef<Map<string, Change>>(new Map())
+  const drag     = useRef<{ el: HTMLElement; mx: number; my: number; ox: number; oy: number } | null>(null)
+  const dragging = useRef(false)
+  const editing  = useRef(false)
+  const raf      = useRef(0)
+
+  // ── Apply saved changes on mount ──────────────────────────────────────────
   useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      const modKey = e.metaKey || e.ctrlKey
-      if (modKey && e.shiftKey && e.key.toLowerCase() === 'e') {
+    for (const c of loadSaved()) {
+      try {
+        const el = document.querySelector<HTMLElement>(c.selector)
+        if (!el) continue
+        if (c.dx || c.dy) setTx(el, c.dx, c.dy)
+        if (c.text !== undefined) el.textContent = c.text
+        changes.current.set(c.selector, c)
+      } catch {}
+    }
+  }, [])
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  useEffect(() => {
+    const kd = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && e.shiftKey && e.key.toLowerCase() === 'e') {
         e.preventDefault()
-        setEditMode(prev => !prev)
+        setOn(v => !v)
       }
-      if (e.key === 'Escape') {
-        setEditMode(false)
+      if (e.key === 'Escape' && on) { doDeselect(); setOn(false) }
+      if (mod && e.key === 'z' && on && !editing.current) { e.preventDefault(); doUndo() }
+    }
+    window.addEventListener('keydown', kd)
+    return () => window.removeEventListener('keydown', kd)
+  }, [on]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Edit-mode mouse listeners ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!on) { setHovBox(null); setSelBox(null); return }
+
+    const onMove = (e: MouseEvent) => {
+      if (dragging.current) { moveDrag(e); return }
+      const el = e.target as HTMLElement
+      if (isUI(el) || el === document.body || !el) { setHovBox(null); return }
+      setHovBox(toRect(el))
+    }
+
+    const onDown = (e: MouseEvent) => {
+      if (isUI(e.target as HTMLElement)) return
+      const target = e.target as HTMLElement
+      if (!target || target === document.body || isFormEl(target)) return
+
+      // Finish text edit when clicking outside the editable element
+      if (editing.current && selEl.current && !selEl.current.contains(target)) {
+        doEndEdit(selEl.current)
       }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
 
-  // ── Load persisted positions on mount ────────────────────────────────────────
-  useEffect(() => {
-    setPositions(loadPositions())
-  }, [])
+      // Clicking on already-selected element → start drag (unless text editing)
+      const cur = selEl.current
+      if (cur && (cur === target || cur.contains(target)) && !editing.current) {
+        e.preventDefault()
+        startDrag(e, cur)
+        return
+      }
 
-  // ── Activate / deactivate edit mode on DOM ───────────────────────────────────
-  useEffect(() => {
-    if (editMode) {
-      activateImageDragging()
-      activateTextEditing()
-    } else {
-      deactivateImageDragging()
-      deactivateTextEditing()
+      // Select clicked element
+      selEl.current = target
+      setSelBox(toRect(target))
+      setIsText(false)
     }
+
+    const onUp   = (e: MouseEvent) => { if (dragging.current) endDrag(e) }
+    const onDbl  = (e: MouseEvent) => {
+      if (isUI(e.target as HTMLElement)) return
+      const el = findTextEl(e.target as HTMLElement)
+      if (el) startEdit(el)
+    }
+    const refresh = () => { if (selEl.current) setSelBox(toRect(selEl.current)) }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('mouseup',   onUp)
+    window.addEventListener('dblclick',  onDbl)
+    window.addEventListener('scroll',    refresh, true)
+    window.addEventListener('resize',    refresh)
+
     return () => {
-      deactivateImageDragging()
-      deactivateTextEditing()
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('mouseup',   onUp)
+      window.removeEventListener('dblclick',  onDbl)
+      window.removeEventListener('scroll',    refresh, true)
+      window.removeEventListener('resize',    refresh)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editMode])
+  }, [on]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Image dragging ────────────────────────────────────────────────────────────
-
-  function activateImageDragging() {
-    const containers = document.querySelectorAll<HTMLElement>('[data-hover-image-id]')
-    containers.forEach(el => {
-      el.style.cursor = 'grab'
-      el.style.pointerEvents = 'all'
-      el.style.outline = '1px dashed #c84b2f'
-      el.style.outlineOffset = '2px'
-      attachPositionReadout(el)
-      el.addEventListener('mousedown', onImageMouseDown)
-    })
+  // ── Actions ───────────────────────────────────────────────────────────────
+  function doDeselect() {
+    if (selEl.current && editing.current) doEndEdit(selEl.current)
+    selEl.current = null
+    setSelBox(null)
+    setIsText(false)
+    editing.current = false
   }
 
-  function deactivateImageDragging() {
-    const containers = document.querySelectorAll<HTMLElement>('[data-hover-image-id]')
-    containers.forEach(el => {
-      el.style.cursor = ''
-      el.style.outline = ''
-      el.style.outlineOffset = ''
-      removePositionReadout(el)
-      el.removeEventListener('mousedown', onImageMouseDown)
-    })
-  }
-
-  function attachPositionReadout(el: HTMLElement) {
-    if (el.querySelector('[data-dev-readout]')) return
-    const readout = document.createElement('div')
-    readout.setAttribute('data-dev-readout', 'true')
-    readout.style.cssText = [
-      'position:absolute',
-      'top:-18px',
-      'left:0',
-      'font-family:var(--font-ibm-plex-mono,monospace)',
-      'font-size:8px',
-      'color:#c84b2f',
-      'background:rgba(28,27,25,0.85)',
-      'padding:2px 5px',
-      'border-radius:2px',
-      'white-space:nowrap',
-      'pointer-events:none',
-      'z-index:10000',
-    ].join(';')
-    updateReadout(readout, el)
-    el.style.position = el.style.position || 'absolute'
-    el.style.overflow = 'visible'
-    el.appendChild(readout)
-  }
-
-  function updateReadout(readout: Element, el: HTMLElement) {
-    const rect = el.getBoundingClientRect()
-    readout.textContent = `x: ${Math.round(rect.left)}px, y: ${Math.round(rect.top)}px`
-  }
-
-  function removePositionReadout(el: HTMLElement) {
-    const readout = el.querySelector('[data-dev-readout]')
-    if (readout) readout.remove()
-  }
-
-  const onImageMouseDown = useCallback((e: Event) => {
-    const mouseEvent = e as MouseEvent
-    const el = mouseEvent.currentTarget as HTMLElement
-    mouseEvent.preventDefault()
+  function startDrag(e: MouseEvent, el: HTMLElement) {
+    e.preventDefault()
+    const [ox, oy] = getTx(el)
+    dragging.current = true
+    drag.current = { el, mx: e.clientX, my: e.clientY, ox, oy }
     el.style.cursor = 'grabbing'
-
-    const rect = el.getBoundingClientRect()
-    dragRef.current = {
-      id: el.getAttribute('data-hover-image-id') ?? '',
-      startMouseX: mouseEvent.clientX,
-      startMouseY: mouseEvent.clientY,
-      startLeft: rect.left,
-      startTop:  rect.top,
-      el,
-    }
-
-    window.addEventListener('mousemove', onMouseMove)
-    window.addEventListener('mouseup',   onMouseUp)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  function onMouseMove(e: MouseEvent) {
-    const drag = dragRef.current
-    if (!drag) return
-
-    const dx = e.clientX - drag.startMouseX
-    const dy = e.clientY - drag.startMouseY
-    const newLeft = drag.startLeft + dx
-    const newTop  = drag.startTop  + dy
-
-    drag.el.style.left = toPxString(newLeft)
-    drag.el.style.top  = toPxString(newTop)
-
-    const readout = drag.el.querySelector('[data-dev-readout]')
-    if (readout) {
-      readout.textContent = `x: ${Math.round(newLeft)}px, y: ${Math.round(newTop)}px`
-    }
+    el.style.userSelect = 'none'
+    history.current.push({ type: 'move', selector: mkSel(el), prevDx: ox, prevDy: oy })
+    setHistLen(history.current.length)
   }
 
-  function onMouseUp(e: MouseEvent) {
-    window.removeEventListener('mousemove', onMouseMove)
-    window.removeEventListener('mouseup',   onMouseUp)
-
-    const drag = dragRef.current
-    if (!drag) return
-
-    drag.el.style.cursor = 'grab'
-
-    const dx = e.clientX - drag.startMouseX
-    const dy = e.clientY - drag.startMouseY
-    const newLeft = drag.startLeft + dx
-    const newTop  = drag.startTop  + dy
-
-    const leftStr = toPxString(newLeft)
-    const topStr  = toPxString(newTop)
-
-    const updated: StoredPositions = { ...loadPositions(), [drag.id]: { left: leftStr, top: topStr } }
-    savePositions(updated)
-    setPositions(updated)
-
-    console.log(
-      `// HoverImages position update\n${JSON.stringify({ id: drag.id, left: leftStr, top: topStr }, null, 2)}`
-    )
-
-    dragRef.current = null
-    forceUpdate(n => n + 1)
+  function moveDrag(e: MouseEvent) {
+    const d = drag.current
+    if (!d) return
+    cancelAnimationFrame(raf.current)
+    raf.current = requestAnimationFrame(() => {
+      const dx = d.ox + (e.clientX - d.mx)
+      const dy = d.oy + (e.clientY - d.my)
+      setTx(d.el, dx, dy)
+      setSelBox(toRect(d.el))
+    })
   }
 
-  // ── Text editing ──────────────────────────────────────────────────────────────
+  function endDrag(e: MouseEvent) {
+    const d = drag.current
+    if (!d) return
+    dragging.current = false
+    d.el.style.cursor = ''
+    d.el.style.userSelect = ''
+    const dx = d.ox + (e.clientX - d.mx)
+    const dy = d.oy + (e.clientY - d.my)
+    setTx(d.el, dx, dy)
+    const s = mkSel(d.el)
+    const ex = changes.current.get(s) ?? { selector: s, dx: 0, dy: 0 }
+    changes.current.set(s, { ...ex, dx, dy })
+    setSelBox(toRect(d.el))
+    drag.current = null
+  }
 
-  function activateTextEditing() {
-    const els = document.querySelectorAll<HTMLElement>('[data-editable]')
-    els.forEach(el => {
-      el.contentEditable = 'true'
-      el.style.backgroundColor = 'rgba(255,233,0,0.15)'
-      el.style.outline = 'none'
-      el.style.cursor = 'text'
-      el.addEventListener('blur', onTextBlur)
+  function startEdit(el: HTMLElement) {
+    if (editing.current) return
+    history.current.push({ type: 'text', selector: mkSel(el), prevText: el.textContent ?? '' })
+    setHistLen(history.current.length)
+    selEl.current = el
+    editing.current = true
+    setIsText(true)
+    setSelBox(toRect(el))
+    el.contentEditable = 'true'
+    el.style.outline = 'none'
+    el.style.caretColor = '#2563eb'
+    el.style.backgroundColor = 'rgba(37,99,235,0.06)'
+    el.focus()
+    const range = document.createRange()
+    range.selectNodeContents(el)
+    const sel = window.getSelection()
+    sel?.removeAllRanges()
+    sel?.addRange(range)
+  }
 
-      // Pre-fill from localStorage
-      const key = el.getAttribute('data-editable') ?? ''
-      const stored = loadText()
-      if (stored[key] !== undefined) {
-        el.textContent = stored[key]
+  function doEndEdit(el: HTMLElement) {
+    el.contentEditable = 'false'
+    el.style.backgroundColor = ''
+    el.style.caretColor = ''
+    editing.current = false
+    setIsText(false)
+    const s = mkSel(el)
+    const ex = changes.current.get(s) ?? { selector: s, dx: 0, dy: 0 }
+    changes.current.set(s, { ...ex, text: el.textContent ?? '' })
+  }
+
+  function doUndo() {
+    const entry = history.current.pop()
+    if (!entry) return
+    setHistLen(history.current.length)
+    try {
+      const el = document.querySelector<HTMLElement>(entry.selector)
+      if (!el) return
+      if (entry.type === 'move') {
+        setTx(el, entry.prevDx, entry.prevDy)
+        const ex = changes.current.get(entry.selector)
+        if (ex) changes.current.set(entry.selector, { ...ex, dx: entry.prevDx, dy: entry.prevDy })
+        if (selEl.current === el) setSelBox(toRect(el))
+      } else {
+        el.textContent = entry.prevText
+        const ex = changes.current.get(entry.selector)
+        if (ex) changes.current.set(entry.selector, { ...ex, text: entry.prevText })
       }
-    })
+    } catch {}
   }
 
-  function deactivateTextEditing() {
-    const els = document.querySelectorAll<HTMLElement>('[data-editable]')
-    els.forEach(el => {
-      el.contentEditable = 'false'
-      el.style.backgroundColor = ''
-      el.style.cursor = ''
-      el.removeEventListener('blur', onTextBlur)
-    })
+  function doSave() {
+    persist(changes.current)
+    setSaveOk(true)
+    setTimeout(() => setSaveOk(false), 2000)
   }
 
-  function onTextBlur(e: Event) {
-    const el = e.target as HTMLElement
-    const key = el.getAttribute('data-editable') ?? ''
-    const value = el.textContent ?? ''
-
-    const stored = loadText()
-    stored[key] = value
-    saveText(stored)
-
-    console.log(
-      `// Text update\n${JSON.stringify({ selector: `[data-editable="${key}"]`, value }, null, 2)}`
-    )
-  }
-
-  // ── Config export ─────────────────────────────────────────────────────────────
-
-  function handleCopyConfig() {
-    const pos   = loadPositions()
-    const text  = loadText()
-    const config = { imagePositions: pos, textContent: text }
-    const output = `const DEV_CONFIG = ${JSON.stringify(config, null, 2)}`
-    navigator.clipboard.writeText(output).then(() => {
-      console.log('// DevEditTool config copied to clipboard')
-    })
-  }
-
-  function handleClear() {
-    localStorage.removeItem(POSITIONS_KEY)
-    localStorage.removeItem(TEXT_KEY)
+  function doReset() {
+    localStorage.removeItem(KEY)
     window.location.reload()
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  if (!on) return null
 
-  if (!editMode) return null
-
-  const monoFont: React.CSSProperties = {
-    fontFamily: 'var(--font-ibm-plex-mono, monospace)',
-    letterSpacing: '0.05em',
-  }
+  const MONO = 'var(--font-ibm-plex-mono, monospace)'
+  const RED  = '#c84b2f'
+  const BLUE = '#2563eb'
+  const HANDLES = [
+    { top: -4,  left: -4 },
+    { top: -4,  right: -4 },
+    { bottom: -4, left: -4 },
+    { bottom: -4, right: -4 },
+  ] as const
 
   return (
     <>
-      {/* Dim overlay */}
-      <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.03)',
-          pointerEvents: 'none',
-          zIndex: 9990,
-        }}
-      />
+      {/* Hover outline */}
+      {hovBox && !dragging.current && (
+        <div data-dev-ui style={{
+          position: 'fixed', pointerEvents: 'none', zIndex: 9990,
+          left: hovBox.x - 1, top: hovBox.y - 1,
+          width: hovBox.w + 2, height: hovBox.h + 2,
+          border: '1px solid rgba(200,75,47,0.35)',
+          borderRadius: 2, boxSizing: 'border-box',
+        }} />
+      )}
+
+      {/* Selection box + handles + tooltip */}
+      {selBox && (
+        <div data-dev-ui style={{
+          position: 'fixed', pointerEvents: 'none', zIndex: 9991,
+          left: selBox.x - 2, top: selBox.y - 2,
+          width: selBox.w + 4, height: selBox.h + 4,
+          border: `2px solid ${isText ? BLUE : RED}`,
+          borderRadius: 2, boxSizing: 'border-box',
+        }}>
+          {/* Corner handles (drag mode only) */}
+          {!isText && HANDLES.map((pos, i) => (
+            <div key={i} style={{
+              position: 'absolute', width: 7, height: 7,
+              background: '#fff', border: `1.5px solid ${RED}`,
+              borderRadius: 1, boxSizing: 'border-box',
+              ...pos,
+            }} />
+          ))}
+
+          {/* Tooltip label */}
+          <div style={{
+            position: 'absolute', bottom: 'calc(100% + 6px)', left: 0,
+            fontFamily: MONO, fontSize: 9, letterSpacing: '0.07em',
+            color: isText ? BLUE : RED,
+            background: 'rgba(255,255,255,0.97)',
+            padding: '3px 8px', borderRadius: 3,
+            whiteSpace: 'nowrap', boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+          }}>
+            {isText ? '✎ editing — click outside to finish' : 'drag to move · dbl-click to edit text'}
+          </div>
+        </div>
+      )}
 
       {/* Edit mode badge */}
-      <div
-        style={{
-          ...monoFont,
-          position: 'fixed',
-          top: 10,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 9999,
-          fontSize: '9px',
-          fontWeight: 400,
-          textTransform: 'uppercase',
-          color: '#c84b2f',
-          background: 'rgba(28,27,25,0.9)',
-          padding: '4px 10px',
-          borderRadius: '3px',
-          pointerEvents: 'none',
-          userSelect: 'none',
-        }}
-      >
+      <div data-dev-ui style={{
+        position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)',
+        zIndex: 9999, fontFamily: MONO, fontSize: 9, letterSpacing: '0.12em',
+        color: RED, background: 'rgba(28,27,25,0.92)',
+        padding: '4px 12px', borderRadius: 20,
+        userSelect: 'none', pointerEvents: 'none',
+      }}>
         ● EDIT MODE
       </div>
 
-      {/* Floating toolbar */}
-      <div
-        style={{
-          ...monoFont,
-          position: 'fixed',
-          bottom: 16,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 9999,
-          display: 'flex',
-          gap: '6px',
-          alignItems: 'center',
-          background: '#1c1b19',
-          color: '#ede9e3',
-          padding: '8px 12px',
-          borderRadius: '4px',
-          fontSize: '9px',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.35)',
-        }}
-      >
-        {[
-          { label: '[COPY CONFIG]', onClick: handleCopyConfig },
-          { label: '[CLEAR]',       onClick: handleClear      },
-          { label: '[EXIT]',        onClick: () => setEditMode(false) },
-        ].map(({ label, onClick }) => (
+      {/* Toolbar */}
+      <div data-dev-ui style={{
+        position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+        zIndex: 9999, display: 'flex', gap: 4, alignItems: 'center',
+        background: '#1c1b19', padding: '6px 8px', borderRadius: 8,
+        boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+      }}>
+        {([
+          { label: saveOk ? '✓ SAVED' : 'SAVE',           fn: doSave,                            ok: saveOk,    dim: false         },
+          { label: histLen ? `UNDO (${histLen})` : 'UNDO', fn: doUndo,                            ok: false,     dim: histLen === 0 },
+          { label: 'RESET',                                fn: doReset,                           ok: false,     dim: false         },
+          { label: 'EXIT',                                 fn: () => { doDeselect(); setOn(false) }, ok: false,  dim: false         },
+        ] as const).map(({ label, fn, ok, dim }) => (
           <button
             key={label}
-            onClick={onClick}
+            onClick={fn as () => void}
             style={{
-              ...monoFont,
+              fontFamily: MONO, letterSpacing: '0.1em',
               background: 'transparent',
-              border: '1px solid rgba(237,233,227,0.2)',
-              color: '#ede9e3',
-              fontSize: '9px',
-              padding: '4px 8px',
-              borderRadius: '3px',
-              cursor: 'pointer',
+              border: `1px solid ${ok ? '#22c55e' : dim ? 'rgba(237,233,227,0.12)' : 'rgba(237,233,227,0.25)'}`,
+              color: ok ? '#22c55e' : dim ? 'rgba(237,233,227,0.3)' : '#ede9e3',
+              fontSize: 9, padding: '4px 10px', borderRadius: 4,
+              cursor: dim ? 'default' : 'pointer',
               textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              transition: 'border-color 0.15s, color 0.15s',
-            }}
-            onMouseEnter={e => {
-              ;(e.currentTarget as HTMLButtonElement).style.borderColor = '#c84b2f'
-              ;(e.currentTarget as HTMLButtonElement).style.color = '#c84b2f'
-            }}
-            onMouseLeave={e => {
-              ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(237,233,227,0.2)'
-              ;(e.currentTarget as HTMLButtonElement).style.color = '#ede9e3'
             }}
           >
             {label}
