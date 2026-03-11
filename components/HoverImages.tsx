@@ -1,6 +1,14 @@
 'use client'
 
 import { AnimatePresence, motion } from 'framer-motion'
+import { useEffect, useState } from 'react'
+
+// ── Dev localStorage key (mirrors DevEditTool) ────────────────────────────────
+const POSITIONS_KEY = 'dev_image_positions'
+
+interface StoredPositions {
+  [id: string]: { left: string; top: string }
+}
 
 export type HoverState =
   | null
@@ -127,6 +135,28 @@ export default function HoverImages({
   hoverState: HoverState
   expandedProjectId?: string | null
 }) {
+  // ── Merge dev-tool overrides from localStorage ──────────────────────────────
+  const [devPositions, setDevPositions] = useState<StoredPositions>({})
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(POSITIONS_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw) as StoredPositions
+        setDevPositions(parsed)
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }, [])
+
+  /** Apply any stored position overrides to an ImageDef */
+  function withDevPos(img: ImageDef): ImageDef {
+    const override = devPositions[img.id]
+    if (!override) return img
+    return { ...img, left: override.left, top: override.top }
+  }
+
   const isExpanded = !!expandedProjectId
 
   return (
@@ -159,20 +189,24 @@ export default function HoverImages({
       </AnimatePresence>
 
       {/* Normal hover images — hidden when a project is expanded */}
-      {!isExpanded && ALL_IMAGES.map(img => (
-        <AnimatePresence key={img.id}>
-          {isVisible(img, hoverState) && (
-            <motion.div
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94], delay: img.delay } }}
-              exit={{ opacity: 0, transition: { duration: 0.15, ease: 'easeIn' } }}
-              style={{ position: 'absolute', left: img.left, top: img.top }}
-            >
-              <PhotoFrame img={img} w={W} h={H} />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      ))}
+      {!isExpanded && ALL_IMAGES.map(rawImg => {
+        const img = withDevPos(rawImg)
+        return (
+          <AnimatePresence key={img.id}>
+            {isVisible(img, hoverState) && (
+              <motion.div
+                data-hover-image-id={img.id}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94], delay: img.delay } }}
+                exit={{ opacity: 0, transition: { duration: 0.15, ease: 'easeIn' } }}
+                style={{ position: 'absolute', left: img.left, top: img.top }}
+              >
+                <PhotoFrame img={img} w={W} h={H} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )
+      })}
 
     </div>
   )

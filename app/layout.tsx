@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Playfair_Display, IBM_Plex_Mono, Manrope } from 'next/font/google'
 import Providers from '@/components/Providers'
 import SiteVoice from '@/components/SiteVoice'
+import DevEditTool from '@/components/DevEditTool'
 import '@/styles/globals.css'
 
 const playfair = Playfair_Display({
@@ -52,6 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Providers>
           {children}
           <SiteVoice />
+          <DevEditTool />
         </Providers>
       </body>
     </html>
