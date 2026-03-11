@@ -130,12 +130,6 @@ const EXPERIENCE = [
   { role: 'UX Developer Intern',                      company: 'Nutanix',                     period: '2021'         },
 ]
 
-const WORK_LOGOS = [
-  { label: 'SL', color: '#e05c38', bg: 'rgba(224,92,56,0.13)'   },
-  { label: 'GH', color: '#6e40c9', bg: 'rgba(110,64,201,0.13)'  },
-  { label: 'S',  color: '#0055b3', bg: 'rgba(0,85,179,0.13)'    },
-]
-
 // ── Primitives ─────────────────────────────────────────────────────────────
 const HR = () => (
   <div style={{ padding: '0 14px' }}>
@@ -143,18 +137,15 @@ const HR = () => (
   </div>
 )
 
-function AccordionRow({ label, open, onToggle, children, onSectionHover, onSectionHoverEnd, onHeaderHover, onHeaderHoverEnd, headerSlot }: {
+function AccordionRow({ label, open, onToggle, children, onSectionHover, onSectionHoverEnd, noBottomDivider }: {
   label: string; open: boolean; onToggle: () => void; children: React.ReactNode
   onSectionHover?: () => void; onSectionHoverEnd?: () => void
-  onHeaderHover?: () => void;  onHeaderHoverEnd?: () => void
-  headerSlot?: React.ReactNode
+  noBottomDivider?: boolean
 }) {
   return (
     <div onMouseEnter={onSectionHover} onMouseLeave={onSectionHoverEnd}>
       <button
         onClick={onToggle}
-        onMouseEnter={onHeaderHover}
-        onMouseLeave={onHeaderHoverEnd}
         style={{
           width: '100%', display: 'flex', alignItems: 'center',
           justifyContent: 'space-between', padding: '10px 16px',
@@ -167,12 +158,9 @@ function AccordionRow({ label, open, onToggle, children, onSectionHover, onSecti
         }}>
           {label}
         </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-          {headerSlot}
-          <PlusIcon open={open} />
-        </div>
+        <PlusIcon open={open} />
       </button>
-      <HR />
+      {!noBottomDivider && <HR />}
       <div style={{
         display: 'grid',
         gridTemplateRows: open ? '1fr' : '0fr',
@@ -202,10 +190,8 @@ export interface RightPanelProps {
 export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate }: RightPanelProps) {
   const [expanded, setExpanded]           = useState<string | null>(null)
   const [openAccordion, setOpenAccordion] = useState<string | null>(null)
-  const [workHdrHov, setWorkHdrHov]       = useState(false)
   const [blurbVisible, setBlurbVisible]   = useState(true)
   const [detailsOpen, setDetailsOpen]     = useState(false)
-  const [furtherOpen, setFurtherOpen]     = useState(false)
   const [ctaHov, setCtaHov]               = useState(false)
 
   // Collapse entire bio when any accordion is open to save vertical space
@@ -221,7 +207,6 @@ export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate 
   function handleExpand(id: string) {
     setExpanded(id)
     setDetailsOpen(false)
-    setFurtherOpen(false)
     onProjectExpand?.(id)
   }
 
@@ -237,29 +222,6 @@ export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate 
       window.dispatchEvent(new CustomEvent('sv:section', { detail: { section } }))
     }
   }
-
-  const workLogos = (
-    <AnimatePresence>
-      {workHdrHov && (
-        <motion.div
-          initial={{ opacity: 0, x: 6 }} animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: 6 }} transition={{ duration: 0.16 }}
-          style={{ display: 'flex', alignItems: 'center', gap: '3px' }}
-        >
-          {WORK_LOGOS.map(logo => (
-            <span key={logo.label} style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              width: '18px', height: '18px', borderRadius: '4px', background: logo.bg,
-              fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '7px',
-              fontWeight: 700, letterSpacing: '0.02em', color: logo.color,
-            }}>
-              {logo.label}
-            </span>
-          ))}
-        </motion.div>
-      )}
-    </AnimatePresence>
-  )
 
   const cardStyle = {
     background: 'var(--panel-bg)',
@@ -322,23 +284,23 @@ export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate 
           >
             {/* INDEX header */}
             <motion.div
-              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: 'easeOut', delay: 0.525 }}
+              initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: [0.25, 0, 0, 1], delay: 0.525 }}
             >
               {indexHeader(false)}
             </motion.div>
 
             <motion.div
-              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: 'easeOut', delay: 0.6 }}
+              initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: [0.25, 0, 0, 1], delay: 0.6 }}
             >
               <HR />
             </motion.div>
 
             {/* Bio — collapses entirely when any accordion opens */}
             <motion.div
-              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: 'easeOut', delay: 0.85 }}
+              initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: [0.25, 0, 0, 1], delay: 0.85 }}
             >
               <div style={{
                 display: 'grid',
@@ -367,17 +329,14 @@ export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate 
 
             {/* WORK */}
             <motion.div
-              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: 'easeOut', delay: 1.175 }}
+              initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: [0.25, 0, 0, 1], delay: 1.175 }}
             >
               <AccordionRow
                 label="Work" open={openAccordion === 'work'}
                 onToggle={() => setOpenAccordion(o => { const next = o === 'work' ? null : 'work'; if (next) dispatchSection(next); return next })}
                 onSectionHover={() => onHoverChange?.({ type: 'work' })}
                 onSectionHoverEnd={() => onHoverChange?.(null)}
-                onHeaderHover={() => setWorkHdrHov(true)}
-                onHeaderHoverEnd={() => setWorkHdrHov(false)}
-                headerSlot={workLogos}
               >
                 <div style={{ padding: '4px 0 10px' }}>
                   {Object.entries(PROJECT_INFO).map(([id, p]) => (
@@ -402,8 +361,8 @@ export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate 
 
             {/* EXPERIENCE */}
             <motion.div
-              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: 'easeOut', delay: 1.5 }}
+              initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: [0.25, 0, 0, 1], delay: 1.5 }}
             >
               <AccordionRow
                 label="Experience" open={openAccordion === 'experience'}
@@ -426,8 +385,8 @@ export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate 
 
             {/* EXPLORATIONS */}
             <motion.div
-              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: 'easeOut', delay: 1.825 }}
+              initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: [0.25, 0, 0, 1], delay: 1.825 }}
             >
               <AccordionRow
                 label="Explorations" open={openAccordion === 'explorations'}
@@ -445,8 +404,8 @@ export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate 
 
             {/* ABOUT */}
             <motion.div
-              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: 'easeOut', delay: 2.15 }}
+              initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: [0.25, 0, 0, 1], delay: 2.15 }}
             >
               <AccordionRow
                 label="About" open={openAccordion === 'about'}
@@ -464,12 +423,13 @@ export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate 
 
             {/* CONTACT */}
             <motion.div
-              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: 'easeOut', delay: 2.475 }}
+              initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: [0.25, 0, 0, 1], delay: 2.475 }}
             >
               <AccordionRow
                 label="Contact" open={openAccordion === 'contact'}
                 onToggle={() => setOpenAccordion(o => o === 'contact' ? null : 'contact')}
+                noBottomDivider
               >
                 <div style={{ padding: '10px 16px 14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <a href="mailto:hello@harshitashyale.com" style={{ fontFamily: 'var(--font-manrope), sans-serif', fontSize: '12px', color: 'var(--ink-muted)', textDecoration: 'none' }}>
@@ -508,7 +468,7 @@ export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate 
                     <svg width="7" height="7" viewBox="0 0 7 7" fill="none">
                       <rect width="7" height="7" fill="var(--ink-faint)" />
                     </svg>
-                    <span style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '9px', letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+                    <span style={{ fontFamily: 'var(--font-ibm-plex-mono)', fontSize: '9px', letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink)' }}>
                       Work
                     </span>
                   </div>
@@ -564,18 +524,6 @@ export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate 
                         </div>
                       ))}
                     </div>
-                  </div>
-                </AccordionRow>
-
-                {/* FURTHER READING */}
-                <HR />
-                <AccordionRow label="Further Reading" open={furtherOpen} onToggle={() => setFurtherOpen(o => !o)}>
-                  <div style={{ padding: '12px 16px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {proj.furtherReading.map((note, i) => (
-                      <p key={i} style={{ fontFamily: 'var(--font-manrope), sans-serif', fontSize: '11.5px', color: 'var(--ink-muted)', lineHeight: 1.8 }}>
-                        {note}
-                      </p>
-                    ))}
                   </div>
                 </AccordionRow>
 
