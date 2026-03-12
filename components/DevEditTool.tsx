@@ -1,16 +1,42 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 
 // ── Storage key ───────────────────────────────────────────────────────────────
 const KEY = 'dev_edit_v2'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-interface Change { selector: string; dx: number; dy: number; text?: string }
+interface Change {
+  selector: string
+  dx: number
+  dy: number
+  text?: string
+  width?: string
+  height?: string
+  imageSrc?: string
+}
+
 type Entry =
-  | { type: 'move'; selector: string; prevDx: number; prevDy: number }
-  | { type: 'text'; selector: string; prevText: string }
+  | { type: 'move';   selector: string; prevDx: number; prevDy: number }
+  | { type: 'text';   selector: string; prevText: string }
+  | { type: 'resize'; selector: string; prevW: string; prevH: string }
+  | { type: 'image';  selector: string; prevSrc: string }
+
 type Rect = { x: number; y: number; w: number; h: number }
+
+type ResizeDir = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
+
+interface ResizeState {
+  el: HTMLElement
+  dir: ResizeDir
+  mx: number
+  my: number
+  origW: number
+  origH: number
+  origDx: number
+  origDy: number
+}
 
 // ── Selector: stable CSS path to identify an element across reloads ───────────
 function mkSel(el: HTMLElement): string {
@@ -20,12 +46,12 @@ function mkSel(el: HTMLElement): string {
   const parts: string[] = []
   let cur: HTMLElement | null = el
   while (cur && cur !== document.body) {
-    const parent: HTMLElement | null = cur.parentElement
-    if (!parent) break
-    const sib = Array.from(parent.children).filter((c): c is HTMLElement => c.tagName === cur!.tagName)
+    const p: HTMLElement | null = cur.parentElement
+    if (!p) break
+    const sib = Array.from(p.children).filter((c): c is HTMLElement => c.tagName === cur!.tagName)
     const tag = cur.tagName.toLowerCase()
     parts.unshift(sib.length > 1 ? `${tag}:nth-of-type(${sib.indexOf(cur) + 1})` : tag)
-    cur = parent
+    cur = p
   }
   return parts.join('>') || el.tagName.toLowerCase()
 }
@@ -62,9 +88,23 @@ function loadSaved(): Change[] {
   try { return JSON.parse(localStorage.getItem(KEY) ?? '[]') } catch { return [] }
 }
 function persist(m: Map<string, Change>) {
-  const list = Array.from(m.values()).filter(c => c.dx !== 0 || c.dy !== 0 || c.text !== undefined)
+  const list = Array.from(m.values()).filter(
+    c => c.dx !== 0 || c.dy !== 0 || c.text !== undefined || c.width !== undefined || c.imageSrc !== undefined
+  )
   localStorage.setItem(KEY, JSON.stringify(list))
 }
+
+// ── Resize handle definitions ─────────────────────────────────────────────────
+const RESIZE_HANDLES: { dir: ResizeDir; style: CSSProperties; cursor: string }[] = [
+  { dir: 'nw', style: { top: 0, left: 0 }, cursor: 'nwse-resize' },
+  { dir: 'n',  style: { top: 0, left: '50%', transform: 'translateX(-50%)' }, cursor: 'ns-resize' },
+  { dir: 'ne', style: { top: 0, right: 0 }, cursor: 'nesw-resize' },
+  { dir: 'e',  style: { top: '50%', right: 0, transform: 'translateY(-50%)' }, cursor: 'ew-resize' },
+  { dir: 'se', style: { bottom: 0, right: 0 }, cursor: 'nwse-resize' },
+  { dir: 's',  style: { bottom: 0, left: '50%', transform: 'translateX(-50%)' }, cursor: 'ns-resize' },
+  { dir: 'sw', style: { bottom: 0, left: 0 }, cursor: 'nesw-resize' },
+  { dir: 'w',  style: { top: '50%', left: 0, transform: 'translateY(-50%)' }, cursor: 'ew-resize' },
+]
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function DevEditTool() {
@@ -72,16 +112,25 @@ export default function DevEditTool() {
   const [hovBox,  setHovBox]  = useState<Rect | null>(null)
   const [selBox,  setSelBox]  = useState<Rect | null>(null)
   const [isText,  setIsText]  = useState(false)
+  const [isImg,   setIsImg]   = useState(false)
   const [saveOk,  setSaveOk]  = useState(false)
   const [histLen, setHistLen] = useState(0)
+  const [dropTarget, setDropTarget] = useState<{ rect: Rect } | null>(null)
 
-  const selEl    = useRef<HTMLElement | null>(null)
-  const history  = useRef<Entry[]>([])
-  const changes  = useRef<Map<string, Change>>(new Map())
-  const drag     = useRef<{ el: HTMLElement; mx: number; my: number; ox: number; oy: number } | null>(null)
-  const dragging = useRef(false)
-  const editing  = useRef(false)
-  const raf      = useRef(0)
+  const selEl      = useRef<HTMLElement | undefined>(undefined)
+  const history    = useRef<Entry[]>([])
+  const changes    = useRef<Map<string, Change>>(new Map())
+  const drag       = useRef<{ el: HTMLElement; mx: number; my: number; ox: number; oy: number } | null>(null)
+  const dragging   = useRef(false)
+  const editing    = useRef(false)
+  const raf        = useRef(0)
+  const resizeRef  = useRef<ResizeState | undefined>(undefined)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // ── Broadcast edit mode to other components ───────────────────────────────
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('dev:edit-mode', { detail: { on } }))
+  }, [on])
 
   // ── Apply saved changes on mount ──────────────────────────────────────────
   useEffect(() => {
@@ -91,6 +140,9 @@ export default function DevEditTool() {
         if (!el) continue
         if (c.dx || c.dy) setTx(el, c.dx, c.dy)
         if (c.text !== undefined) el.textContent = c.text
+        if (c.width) el.style.width = c.width
+        if (c.height) el.style.height = c.height
+        if (c.imageSrc) (el as HTMLImageElement).src = c.imageSrc
         changes.current.set(c.selector, c)
       } catch {}
     }
@@ -113,9 +165,10 @@ export default function DevEditTool() {
 
   // ── Edit-mode mouse listeners ─────────────────────────────────────────────
   useEffect(() => {
-    if (!on) { setHovBox(null); setSelBox(null); return }
+    if (!on) { setHovBox(null); setSelBox(null); setDropTarget(null); return }
 
     const onMove = (e: MouseEvent) => {
+      if (resizeRef.current) { moveResize(e); return }
       if (dragging.current) { moveDrag(e); return }
       const el = e.target as HTMLElement
       if (isUI(el) || el === document.body || !el) { setHovBox(null); return }
@@ -144,9 +197,13 @@ export default function DevEditTool() {
       selEl.current = target
       setSelBox(toRect(target))
       setIsText(false)
+      setIsImg(target.tagName === 'IMG')
     }
 
-    const onUp   = (e: MouseEvent) => { if (dragging.current) endDrag(e) }
+    const onUp   = (e: MouseEvent) => {
+      if (resizeRef.current) { endResize(e); return }
+      if (dragging.current) endDrag(e)
+    }
     const onDbl  = (e: MouseEvent) => {
       if (isUI(e.target as HTMLElement)) return
       const el = findTextEl(e.target as HTMLElement)
@@ -171,12 +228,61 @@ export default function DevEditTool() {
     }
   }, [on]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Image drag-and-drop listeners ─────────────────────────────────────────
+  useEffect(() => {
+    if (!on) return
+
+    const onDragOver = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes('Files')) return
+      e.preventDefault()
+      const el = document.elementFromPoint(e.clientX, e.clientY)
+      const imgEl = el instanceof HTMLImageElement
+        ? el
+        : el instanceof HTMLElement
+          ? el.querySelector('img') ?? null
+          : null
+      if (imgEl) {
+        setDropTarget({ rect: toRect(imgEl) })
+      } else {
+        setDropTarget(null)
+      }
+    }
+
+    const onDragLeave = () => setDropTarget(null)
+
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault()
+      setDropTarget(null)
+      const files = e.dataTransfer?.files
+      if (!files || files.length === 0) return
+      const file = files[0]
+      if (!file.type.startsWith('image/')) return
+      const el = document.elementFromPoint(e.clientX, e.clientY)
+      const imgEl = el instanceof HTMLImageElement
+        ? el
+        : el instanceof HTMLElement
+          ? el.querySelector('img') ?? null
+          : null
+      if (imgEl) replaceImage(imgEl, file)
+    }
+
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('dragleave', onDragLeave)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('dragleave', onDragLeave)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [on]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Actions ───────────────────────────────────────────────────────────────
   function doDeselect() {
     if (selEl.current && editing.current) doEndEdit(selEl.current)
-    selEl.current = null
+    selEl.current = undefined
     setSelBox(null)
     setIsText(false)
+    setIsImg(false)
     editing.current = false
   }
 
@@ -219,6 +325,87 @@ export default function DevEditTool() {
     drag.current = null
   }
 
+  function startResize(e: React.MouseEvent<HTMLDivElement>, dir: ResizeDir) {
+    e.stopPropagation()
+    const el = selEl.current
+    if (!el) return
+    const [origDx, origDy] = getTx(el)
+    const rect = el.getBoundingClientRect()
+    const origW = parseFloat(el.style.width) || rect.width
+    const origH = parseFloat(el.style.height) || rect.height
+    const s = mkSel(el)
+    history.current.push({
+      type: 'resize',
+      selector: s,
+      prevW: el.style.width || `${Math.round(rect.width)}px`,
+      prevH: el.style.height || `${Math.round(rect.height)}px`,
+    })
+    setHistLen(history.current.length)
+    resizeRef.current = { el, dir, mx: e.clientX, my: e.clientY, origW, origH, origDx, origDy }
+  }
+
+  function moveResize(e: MouseEvent) {
+    const r = resizeRef.current
+    if (!r) return
+    cancelAnimationFrame(raf.current)
+    raf.current = requestAnimationFrame(() => {
+      const ddx = e.clientX - r.mx
+      const ddy = e.clientY - r.my
+      let newW = r.origW, newH = r.origH, newDx = r.origDx, newDy = r.origDy
+
+      if (r.dir.includes('e')) newW = Math.max(20, r.origW + ddx)
+      if (r.dir.includes('w')) {
+        newW = Math.max(20, r.origW - ddx)
+        newDx = r.origDx + (r.origW - newW)
+      }
+      if (r.dir.includes('s')) newH = Math.max(20, r.origH + ddy)
+      if (r.dir.includes('n')) {
+        newH = Math.max(20, r.origH - ddy)
+        newDy = r.origDy + (r.origH - newH)
+      }
+
+      r.el.style.width  = `${Math.round(newW)}px`
+      r.el.style.height = `${Math.round(newH)}px`
+      setTx(r.el, newDx, newDy)
+      setSelBox(toRect(r.el))
+    })
+  }
+
+  function endResize(e: MouseEvent) {
+    const r = resizeRef.current
+    if (!r) return
+    // Final resize application
+    const ddx = e.clientX - r.mx
+    const ddy = e.clientY - r.my
+    let newW = r.origW, newH = r.origH, newDx = r.origDx, newDy = r.origDy
+
+    if (r.dir.includes('e')) newW = Math.max(20, r.origW + ddx)
+    if (r.dir.includes('w')) {
+      newW = Math.max(20, r.origW - ddx)
+      newDx = r.origDx + (r.origW - newW)
+    }
+    if (r.dir.includes('s')) newH = Math.max(20, r.origH + ddy)
+    if (r.dir.includes('n')) {
+      newH = Math.max(20, r.origH - ddy)
+      newDy = r.origDy + (r.origH - newH)
+    }
+
+    r.el.style.width  = `${Math.round(newW)}px`
+    r.el.style.height = `${Math.round(newH)}px`
+    setTx(r.el, newDx, newDy)
+
+    const s = mkSel(r.el)
+    const ex = changes.current.get(s) ?? { selector: s, dx: 0, dy: 0 }
+    changes.current.set(s, {
+      ...ex,
+      dx: newDx, dy: newDy,
+      width: `${Math.round(newW)}px`,
+      height: `${Math.round(newH)}px`,
+    })
+    setSelBox(toRect(r.el))
+    resizeRef.current = undefined
+  }
+
   function startEdit(el: HTMLElement) {
     if (editing.current) return
     history.current.push({ type: 'text', selector: mkSel(el), prevText: el.textContent ?? '' })
@@ -226,6 +413,7 @@ export default function DevEditTool() {
     selEl.current = el
     editing.current = true
     setIsText(true)
+    setIsImg(false)
     setSelBox(toRect(el))
     el.contentEditable = 'true'
     el.style.outline = 'none'
@@ -250,6 +438,21 @@ export default function DevEditTool() {
     changes.current.set(s, { ...ex, text: el.textContent ?? '' })
   }
 
+  function replaceImage(imgEl: HTMLImageElement, file: File) {
+    const s = mkSel(imgEl)
+    const prevSrc = imgEl.src
+    history.current.push({ type: 'image', selector: s, prevSrc })
+    setHistLen(history.current.length)
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const base64 = ev.target?.result as string
+      imgEl.src = base64
+      const ex = changes.current.get(s) ?? { selector: s, dx: 0, dy: 0 }
+      changes.current.set(s, { ...ex, imageSrc: base64 })
+    }
+    reader.readAsDataURL(file)
+  }
+
   function doUndo() {
     const entry = history.current.pop()
     if (!entry) return
@@ -262,10 +465,20 @@ export default function DevEditTool() {
         const ex = changes.current.get(entry.selector)
         if (ex) changes.current.set(entry.selector, { ...ex, dx: entry.prevDx, dy: entry.prevDy })
         if (selEl.current === el) setSelBox(toRect(el))
-      } else {
+      } else if (entry.type === 'text') {
         el.textContent = entry.prevText
         const ex = changes.current.get(entry.selector)
         if (ex) changes.current.set(entry.selector, { ...ex, text: entry.prevText })
+      } else if (entry.type === 'resize') {
+        el.style.width = entry.prevW
+        el.style.height = entry.prevH
+        const ex = changes.current.get(entry.selector)
+        if (ex) changes.current.set(entry.selector, { ...ex, width: entry.prevW, height: entry.prevH })
+        if (selEl.current === el) setSelBox(toRect(el))
+      } else if (entry.type === 'image') {
+        ;(el as HTMLImageElement).src = entry.prevSrc
+        const ex = changes.current.get(entry.selector)
+        if (ex) changes.current.set(entry.selector, { ...ex, imageSrc: entry.prevSrc })
       }
     } catch {}
   }
@@ -286,17 +499,11 @@ export default function DevEditTool() {
   const MONO = 'var(--font-ibm-plex-mono, monospace)'
   const RED  = '#c84b2f'
   const BLUE = '#2563eb'
-  const HANDLES = [
-    { top: -4,  left: -4 },
-    { top: -4,  right: -4 },
-    { bottom: -4, left: -4 },
-    { bottom: -4, right: -4 },
-  ] as const
 
   return (
     <>
       {/* Hover outline */}
-      {hovBox && !dragging.current && (
+      {hovBox && !dragging.current && !resizeRef.current && (
         <div data-dev-ui style={{
           position: 'fixed', pointerEvents: 'none', zIndex: 9990,
           left: hovBox.x - 1, top: hovBox.y - 1,
@@ -306,7 +513,7 @@ export default function DevEditTool() {
         }} />
       )}
 
-      {/* Selection box + handles + tooltip */}
+      {/* Selection box + tooltip */}
       {selBox && (
         <div data-dev-ui style={{
           position: 'fixed', pointerEvents: 'none', zIndex: 9991,
@@ -315,16 +522,6 @@ export default function DevEditTool() {
           border: `2px solid ${isText ? BLUE : RED}`,
           borderRadius: 2, boxSizing: 'border-box',
         }}>
-          {/* Corner handles (drag mode only) */}
-          {!isText && HANDLES.map((pos, i) => (
-            <div key={i} style={{
-              position: 'absolute', width: 7, height: 7,
-              background: '#fff', border: `1.5px solid ${RED}`,
-              borderRadius: 1, boxSizing: 'border-box',
-              ...pos,
-            }} />
-          ))}
-
           {/* Tooltip label */}
           <div style={{
             position: 'absolute', bottom: 'calc(100% + 6px)', left: 0,
@@ -339,6 +536,52 @@ export default function DevEditTool() {
         </div>
       )}
 
+      {/* 8 Resize handles — separate container so they receive pointer events */}
+      {selBox && !isText && (
+        <div data-dev-ui style={{
+          position: 'fixed',
+          left: selBox.x - 6, top: selBox.y - 6,
+          width: selBox.w + 12, height: selBox.h + 12,
+          pointerEvents: 'none',
+          zIndex: 9992,
+        }}>
+          {RESIZE_HANDLES.map(({ dir, style: pos, cursor }) => (
+            <div
+              key={dir}
+              data-dev-ui
+              onMouseDown={(e) => startResize(e, dir)}
+              style={{
+                position: 'absolute',
+                width: 8, height: 8,
+                background: '#fff',
+                border: '2px solid #c84b2f',
+                boxSizing: 'border-box',
+                pointerEvents: 'auto',
+                cursor,
+                ...pos,
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Image drop target overlay */}
+      {dropTarget && (
+        <div data-dev-ui style={{
+          position: 'fixed', pointerEvents: 'none', zIndex: 9993,
+          left: dropTarget.rect.x, top: dropTarget.rect.y,
+          width: dropTarget.rect.w, height: dropTarget.rect.h,
+          border: '2px dashed #2563eb',
+          background: 'rgba(37,99,235,0.08)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxSizing: 'border-box',
+        }}>
+          <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.12em', color: BLUE }}>
+            DROP IMAGE
+          </span>
+        </div>
+      )}
+
       {/* Edit mode badge */}
       <div data-dev-ui style={{
         position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)',
@@ -350,6 +593,22 @@ export default function DevEditTool() {
         ● EDIT MODE
       </div>
 
+      {/* Hidden file input for replace image */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        data-dev-ui
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file && selEl.current && selEl.current.tagName === 'IMG') {
+            replaceImage(selEl.current as HTMLImageElement, file)
+          }
+          e.target.value = ''
+        }}
+      />
+
       {/* Toolbar */}
       <div data-dev-ui style={{
         position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
@@ -357,14 +616,33 @@ export default function DevEditTool() {
         background: '#1c1b19', padding: '6px 8px', borderRadius: 8,
         boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
       }}>
+        {/* REPLACE IMG button — only shown when an img is selected */}
+        {isImg && (
+          <button
+            data-dev-ui
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              fontFamily: MONO, letterSpacing: '0.1em',
+              background: 'transparent',
+              border: '1px solid rgba(37,99,235,0.6)',
+              color: '#93c5fd',
+              fontSize: 9, padding: '4px 10px', borderRadius: 4,
+              cursor: 'pointer', textTransform: 'uppercase',
+            }}
+          >
+            REPLACE IMG
+          </button>
+        )}
+
         {([
-          { label: saveOk ? '✓ SAVED' : 'SAVE',           fn: doSave,                            ok: saveOk,    dim: false         },
-          { label: histLen ? `UNDO (${histLen})` : 'UNDO', fn: doUndo,                            ok: false,     dim: histLen === 0 },
-          { label: 'RESET',                                fn: doReset,                           ok: false,     dim: false         },
-          { label: 'EXIT',                                 fn: () => { doDeselect(); setOn(false) }, ok: false,  dim: false         },
+          { label: saveOk ? '✓ SAVED' : 'SAVE',           fn: doSave,                              ok: saveOk,    dim: false         },
+          { label: histLen ? `UNDO (${histLen})` : 'UNDO', fn: doUndo,                              ok: false,     dim: histLen === 0 },
+          { label: 'RESET',                                fn: doReset,                             ok: false,     dim: false         },
+          { label: 'EXIT',                                 fn: () => { doDeselect(); setOn(false) }, ok: false,    dim: false         },
         ] as const).map(({ label, fn, ok, dim }) => (
           <button
             key={label}
+            data-dev-ui
             onClick={fn as () => void}
             style={{
               fontFamily: MONO, letterSpacing: '0.1em',

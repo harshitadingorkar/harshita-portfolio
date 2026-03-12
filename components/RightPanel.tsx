@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { type HoverState } from '@/components/HoverImages'
+
 function BackArrowIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -193,8 +194,26 @@ export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate 
   const [blurbVisible, setBlurbVisible]   = useState(true)
   const [detailsOpen, setDetailsOpen]     = useState(false)
   const [ctaHov, setCtaHov]               = useState(false)
+  const [devEditMode, setDevEditMode]     = useState(false)
 
-  // Collapse entire bio when any accordion is open to save vertical space
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const panelRef      = useRef<HTMLDivElement>(null)
+
+  function clearHoverTimer() {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current)
+      hoverTimerRef.current = null
+    }
+  }
+
+  // ── dev:edit-mode listener ──────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: Event) => setDevEditMode((e as CustomEvent<{ on: boolean }>).detail.on)
+    window.addEventListener('dev:edit-mode', handler)
+    return () => window.removeEventListener('dev:edit-mode', handler)
+  }, [])
+
+  // ── Collapse bio when accordion opens ──────────────────────────────────
   useEffect(() => {
     if (openAccordion !== null) {
       setBlurbVisible(false)
@@ -203,6 +222,28 @@ export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate 
       return () => clearTimeout(t)
     }
   }, [openAccordion])
+
+  // ── Click-outside to collapse panel ────────────────────────────────────
+  useEffect(() => {
+    if (!expanded) return
+    function onMouseDown(e: MouseEvent) {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        handleCollapse()
+      }
+    }
+    window.addEventListener('mousedown', onMouseDown, true)
+    return () => window.removeEventListener('mousedown', onMouseDown, true)
+  }, [expanded]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Escape to collapse panel ────────────────────────────────────────────
+  useEffect(() => {
+    if (!expanded) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') handleCollapse()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [expanded]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleExpand(id: string) {
     setExpanded(id)
@@ -257,6 +298,7 @@ export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate 
 
   return (
     <div
+      ref={panelRef}
       className="hidden md:flex"
       style={{
         position: 'fixed',
@@ -336,15 +378,27 @@ export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate 
                 label="Work" open={openAccordion === 'work'}
                 onToggle={() => setOpenAccordion(o => { const next = o === 'work' ? null : 'work'; if (next) dispatchSection(next); return next })}
                 onSectionHover={() => onHoverChange?.({ type: 'work' })}
-                onSectionHoverEnd={() => onHoverChange?.(null)}
+                onSectionHoverEnd={() => {
+                  clearHoverTimer()
+                  if (!devEditMode) onHoverChange?.(null)
+                }}
               >
                 <div style={{ padding: '4px 0 10px' }}>
                   {Object.entries(PROJECT_INFO).map(([id, p]) => (
                     <button
                       key={id}
                       onClick={() => handleExpand(id)}
-                      onMouseEnter={() => onHoverChange?.({ type: 'project', id })}
-                      onMouseLeave={() => onHoverChange?.({ type: 'work' })}
+                      onMouseEnter={() => {
+                        onHoverChange?.({ type: 'project', id })
+                        if (!expanded) {
+                          clearHoverTimer()
+                          hoverTimerRef.current = setTimeout(() => handleExpand(id), 3000)
+                        }
+                      }}
+                      onMouseLeave={() => {
+                        onHoverChange?.({ type: 'work' })
+                        clearHoverTimer()
+                      }}
                       style={{ display: 'block', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '7px 16px 6px', textAlign: 'left' }}
                     >
                       <span style={{ display: 'block', fontFamily: 'var(--font-manrope), sans-serif', fontSize: '11.5px', color: 'var(--ink-muted)', transition: 'color 0.15s ease', marginBottom: '2px' }}>
@@ -392,7 +446,7 @@ export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate 
                 label="Explorations" open={openAccordion === 'explorations'}
                 onToggle={() => setOpenAccordion(o => { const next = o === 'explorations' ? null : 'explorations'; if (next) dispatchSection(next); return next })}
                 onSectionHover={() => onHoverChange?.({ type: 'explorations' })}
-                onSectionHoverEnd={() => onHoverChange?.(null)}
+                onSectionHoverEnd={() => { if (!devEditMode) onHoverChange?.(null) }}
               >
                 <div style={{ padding: '10px 16px 14px' }}>
                   <p style={{ fontFamily: 'var(--font-manrope), sans-serif', fontSize: '12px', color: 'var(--ink-muted)', lineHeight: 1.75 }}>
@@ -411,7 +465,7 @@ export default function RightPanel({ onHoverChange, onProjectExpand, onNavigate 
                 label="About" open={openAccordion === 'about'}
                 onToggle={() => setOpenAccordion(o => { const next = o === 'about' ? null : 'about'; if (next) dispatchSection(next); return next })}
                 onSectionHover={() => onHoverChange?.({ type: 'about' })}
-                onSectionHoverEnd={() => onHoverChange?.(null)}
+                onSectionHoverEnd={() => { if (!devEditMode) onHoverChange?.(null) }}
               >
                 <div style={{ padding: '10px 16px 14px' }}>
                   <p style={{ fontFamily: 'var(--font-manrope), sans-serif', fontSize: '12px', color: 'var(--ink-muted)', lineHeight: 1.8 }}>
