@@ -137,6 +137,7 @@ export default function HoverImages({
 }) {
   // ── Merge dev-tool overrides from localStorage ──────────────────────────────
   const [devPositions, setDevPositions] = useState<StoredPositions>({})
+  const [editMode, setEditMode] = useState(false)
 
   useEffect(() => {
     try {
@@ -148,6 +149,13 @@ export default function HoverImages({
     } catch {
       // ignore parse errors
     }
+  }, [])
+
+  // Listen for DevEditTool edit mode so images become interactive
+  useEffect(() => {
+    const handler = (e: Event) => setEditMode((e as CustomEvent<{ on: boolean }>).detail.on)
+    window.addEventListener('dev:edit-mode', handler)
+    return () => window.removeEventListener('dev:edit-mode', handler)
   }, [])
 
   /** Apply any stored position overrides to an ImageDef */
@@ -170,7 +178,11 @@ export default function HoverImages({
             initial={{ opacity: 0, scale: 0.96, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } }}
             exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.3, ease: 'easeIn' } }}
-            style={{ position: 'absolute', left: EXP_LEFT, top: EXP_TOP }}
+            style={{
+              position: 'absolute', left: EXP_LEFT, top: EXP_TOP,
+              pointerEvents: editMode ? 'auto' : 'none',
+              cursor: editMode ? 'move' : 'default',
+            }}
           >
             <PhotoFrame
               img={{
@@ -199,7 +211,12 @@ export default function HoverImages({
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94], delay: img.delay } }}
                 exit={{ opacity: 0, transition: { duration: 0.15, ease: 'easeIn' } }}
-                style={{ position: 'absolute', left: img.left, top: img.top }}
+                style={{
+                  position: 'absolute', left: img.left, top: img.top,
+                  // pointer-events: auto on a child overrides none on the parent container
+                  pointerEvents: editMode ? 'auto' : 'none',
+                  cursor: editMode ? 'move' : 'default',
+                }}
               >
                 <PhotoFrame img={img} w={W} h={H} />
               </motion.div>

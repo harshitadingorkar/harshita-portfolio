@@ -115,7 +115,9 @@ export default function DevEditTool() {
   const [isImg,   setIsImg]   = useState(false)
   const [saveOk,  setSaveOk]  = useState(false)
   const [histLen, setHistLen] = useState(0)
-  const [dropTarget, setDropTarget] = useState<{ rect: Rect } | null>(null)
+  const [dropTarget,    setDropTarget]    = useState<{ rect: Rect } | null>(null)
+  const [contentOpen,   setContentOpen]   = useState(false)
+  const [contentBlocks, setContentBlocks] = useState<{ sel: string; tag: string; text: string }[]>([])
 
   const selEl      = useRef<HTMLElement | undefined>(undefined)
   const history    = useRef<Entry[]>([])
@@ -170,15 +172,33 @@ export default function DevEditTool() {
     const onMove = (e: MouseEvent) => {
       if (resizeRef.current) { moveResize(e); return }
       if (dragging.current) { moveDrag(e); return }
-      const el = e.target as HTMLElement
+      let el = e.target as HTMLElement
       if (isUI(el) || el === document.body || !el) { setHovBox(null); return }
+      // Climb to hover-image container for better outline
+      const hoverAncestor = el.closest<HTMLElement>('[data-hover-image-id]')
+      if (hoverAncestor) el = hoverAncestor
       setHovBox(toRect(el))
     }
 
     const onDown = (e: MouseEvent) => {
       if (isUI(e.target as HTMLElement)) return
-      const target = e.target as HTMLElement
+      let target = e.target as HTMLElement
       if (!target || target === document.body || isFormEl(target)) return
+
+      // Climb to hover-image container so the whole frame is selected/dragged
+      const hoverAncestor = target.closest<HTMLElement>('[data-hover-image-id]')
+      if (hoverAncestor) target = hoverAncestor
+
+      // If clicking an <img> that fills its container (cover layout), select parent
+      if (target.tagName === 'IMG' && !hoverAncestor) {
+        const img = target as HTMLImageElement
+        const cs  = window.getComputedStyle(img)
+        const parentCs = img.parentElement ? window.getComputedStyle(img.parentElement) : null
+        const coversParent = cs.width === '100%' || cs.position === 'absolute'
+        if (coversParent && img.parentElement && parentCs?.overflow === 'hidden') {
+          target = img.parentElement
+        }
+      }
 
       // Finish text edit when clicking outside the editable element
       if (editing.current && selEl.current && !selEl.current.contains(target)) {
@@ -483,6 +503,42 @@ export default function DevEditTool() {
     } catch {}
   }
 
+  function openContentDrawer() {
+    // Scan all visible text elements and collect them
+    const QUERY = 'h1,h2,h3,h4,h5,h6,p,li,span,a,button,label'
+    const blocks: { sel: string; tag: string; text: string }[] = []
+    const seen = new Set<string>()
+    document.querySelectorAll<HTMLElement>(QUERY).forEach(el => {
+      if (isUI(el)) return
+      const text = el.textContent?.trim() ?? ''
+      if (!text || text.length < 2) return
+      // Skip elements whose text is entirely from children
+      const directText = Array.from(el.childNodes)
+        .filter(n => n.nodeType === Node.TEXT_NODE)
+        .map(n => n.textContent?.trim() ?? '')
+        .join('').trim()
+      if (!directText && el.children.length > 0) return
+      const sel = mkSel(el)
+      if (seen.has(sel)) return
+      seen.add(sel)
+      blocks.push({ sel, tag: el.tagName.toLowerCase(), text })
+    })
+    setContentBlocks(blocks)
+    setContentOpen(true)
+  }
+
+  function applyContentEdit(sel: string, newText: string) {
+    try {
+      const el = document.querySelector<HTMLElement>(sel)
+      if (!el) return
+      history.current.push({ type: 'text', selector: sel, prevText: el.textContent ?? '' })
+      setHistLen(history.current.length)
+      el.textContent = newText
+      const ex = changes.current.get(sel) ?? { selector: sel, dx: 0, dy: 0 }
+      changes.current.set(sel, { ...ex, text: newText })
+    } catch {}
+  }
+
   function doSave() {
     persist(changes.current)
     setSaveOk(true)
@@ -582,6 +638,80 @@ export default function DevEditTool() {
         </div>
       )}
 
+      {/* Content Editor Drawer */}
+      {contentOpen && (
+        <div data-dev-ui style={{
+          position: 'fixed', top: 0, right: 0, bottom: 0,
+          width: 380, zIndex: 9998,
+          background: '#fafaf8',
+          borderLeft: '1px solid #e0ddd8',
+          display: 'flex', flexDirection: 'column',
+          boxShadow: '-8px 0 32px rgba(0,0,0,0.12)',
+          fontFamily: MONO,
+        }}>
+          {/* Drawer header */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '14px 16px', borderBottom: '1px solid #e0ddd8',
+            background: '#1c1b19',
+          }}>
+            <span style={{ fontSize: 9, letterSpacing: '0.14em', color: '#ede9e3', textTransform: 'uppercase' }}>
+              ✎ Page Content
+            </span>
+            <button
+              data-dev-ui onClick={() => setContentOpen(false)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9b9690', fontSize: 14, lineHeight: 1, padding: 0 }}
+            >×</button>
+          </div>
+          <p style={{ padding: '10px 16px 6px', fontSize: 8, color: '#a8a49e', letterSpacing: '0.06em', margin: 0 }}>
+            Edit any field below — changes reflect live on the page
+          </p>
+          {/* Scrollable blocks */}
+          <div style={{ overflowY: 'auto', flex: 1, padding: '0 16px 16px' }}>
+            {contentBlocks.map((block, i) => (
+              <div key={i} style={{ marginBottom: 12 }}>
+                <div style={{
+                  fontSize: 8, color: '#c84b2f', letterSpacing: '0.1em',
+                  textTransform: 'uppercase', marginBottom: 4,
+                }}>
+                  {block.tag}
+                </div>
+                <textarea
+                  data-dev-ui
+                  defaultValue={block.text}
+                  rows={Math.min(6, Math.ceil(block.text.length / 48) + 1)}
+                  onChange={e => applyContentEdit(block.sel, e.target.value)}
+                  style={{
+                    width: '100%', boxSizing: 'border-box',
+                    fontFamily: 'var(--font-manrope, sans-serif)', fontSize: 12,
+                    color: '#1c1b19', lineHeight: 1.6,
+                    background: '#fff', border: '1px solid #e0ddd8',
+                    borderRadius: 4, padding: '8px 10px',
+                    resize: 'vertical', outline: 'none',
+                  }}
+                  onFocus={e => { (e.target as HTMLTextAreaElement).style.borderColor = '#c84b2f' }}
+                  onBlur={e => { (e.target as HTMLTextAreaElement).style.borderColor = '#e0ddd8' }}
+                />
+              </div>
+            ))}
+          </div>
+          {/* Drawer footer */}
+          <div style={{ padding: '10px 16px', borderTop: '1px solid #e0ddd8', display: 'flex', gap: 6 }}>
+            <button
+              data-dev-ui onClick={doSave}
+              style={{
+                flex: 1, fontFamily: MONO, fontSize: 9, letterSpacing: '0.1em',
+                background: saveOk ? '#22c55e' : '#1c1b19', color: '#ede9e3',
+                border: 'none', borderRadius: 4, padding: '8px 0', cursor: 'pointer',
+                textTransform: 'uppercase',
+              }}
+            >
+              {saveOk ? '✓ Saved' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Edit mode badge */}
       <div data-dev-ui style={{
         position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)',
@@ -633,6 +763,22 @@ export default function DevEditTool() {
             REPLACE IMG
           </button>
         )}
+
+        {/* CONTENT button — opens text editor drawer */}
+        <button
+          data-dev-ui
+          onClick={openContentDrawer}
+          style={{
+            fontFamily: MONO, letterSpacing: '0.1em',
+            background: contentOpen ? 'rgba(200,75,47,0.15)' : 'transparent',
+            border: `1px solid ${contentOpen ? RED : 'rgba(237,233,227,0.25)'}`,
+            color: contentOpen ? RED : '#ede9e3',
+            fontSize: 9, padding: '4px 10px', borderRadius: 4,
+            cursor: 'pointer', textTransform: 'uppercase',
+          }}
+        >
+          ✎ CONTENT
+        </button>
 
         {([
           { label: saveOk ? '✓ SAVED' : 'SAVE',           fn: doSave,                              ok: saveOk,    dim: false         },
